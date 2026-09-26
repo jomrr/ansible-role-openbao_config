@@ -1,0 +1,104 @@
+---
+# role: openbao_config
+# file: molecule/resources/tasks/verify_recovery.yml
+
+- name: OPENBAO_CONFIG | Read the public recovery key fixture
+  ansible.builtin.slurp:
+    src: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gpg/recipient.pgp"
+  register: __openbao_config_test_recipient
+
+- name: OPENBAO_CONFIG | Exercise the explicit recovery entry point
+  vars:
+    openbao_config_recovery_pgp_keys: "{{ [__openbao_config_test_recipient.content] }}"
+    openbao_config_recovery_threshold: 1
+    openbao_config_recovery_output: >-
+      {{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/recovery/{{ inventory_hostname }}.json
+  block:
+    - name: OPENBAO_CONFIG | Read recovery state after check mode
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/sys/seal-status"
+      register: __openbao_config_test_before_recovery
+      no_log: true
+
+    - name: OPENBAO_CONFIG | Assert check mode did not create recovery keys
+      ansible.builtin.assert:
+        that:
+          - __openbao_config_test_before_recovery.json.n == 0
+        quiet: true
+
+    - name: OPENBAO_CONFIG | Simulate interruption after key generation on AlmaLinux
+      when: __openbao_config_test_port == 18201
+      block:
+        - name: OPENBAO_CONFIG | Persist the pending export manifest
+          ansible.builtin.copy:
+            dest: "{{ openbao_config_recovery_output }}"
+            mode: "0600"
+            content: >-
+              {{ {'cluster_id': __openbao_config_test_before_recovery.json.cluster_id,
+              'threshold': openbao_config_recovery_threshold,
+              'pgp_keys': openbao_config_recovery_pgp_keys} | to_nice_json }}
+
+        - name: OPENBAO_CONFIG | Create encrypted recovery keys before losing the client response
+          ansible.builtin.uri:
+            url: "{{ openbao_config_url }}/v1/sys/rotate/recovery/init"
+            method: POST
+            body:
+              secret_shares: 1
+              secret_threshold: 1
+              pgp_keys: "{{ openbao_config_recovery_pgp_keys }}"
+              backup: true
+              require_verification: false
+          no_log: true
+
+    - name: OPENBAO_CONFIG | Export initial encrypted recovery shares
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        tasks_from: recovery
+
+    - name: OPENBAO_CONFIG | Inspect the initial recovery export
+      ansible.builtin.stat:
+        path: "{{ openbao_config_recovery_output }}"
+      register: __openbao_config_test_first_export
+
+    - name: OPENBAO_CONFIG | Repeat the same recovery export
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        tasks_from: recovery
+
+    - name: OPENBAO_CONFIG | Inspect the repeated recovery export
+      ansible.builtin.stat:
+        path: "{{ openbao_config_recovery_output }}"
+      register: __openbao_config_test_second_export
+
+    - name: OPENBAO_CONFIG | Assert the export is private and unchanged
+      ansible.builtin.assert:
+        that:
+          - __openbao_config_test_second_export.stat.mode == '0600'
+          - __openbao_config_test_first_export.stat.checksum == __openbao_config_test_second_export.stat.checksum
+        quiet: true
+
+    - name: OPENBAO_CONFIG | Read the generated recovery configuration
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/sys/seal-status"
+      register: __openbao_config_test_after_recovery
+      no_log: true
+
+    - name: OPENBAO_CONFIG | Assert the requested recovery quorum
+      ansible.builtin.assert:
+        that:
+          - __openbao_config_test_after_recovery.json.n == 1
+          - __openbao_config_test_after_recovery.json.t == 1
+        quiet: true
+
+    - name: OPENBAO_CONFIG | Verify that the server backup was removed
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/sys/rotate/recovery/backup"
+        status_code: 400
+      register: __openbao_config_test_backup
+      no_log: true
+
+    - name: OPENBAO_CONFIG | Assert the backup is absent
+      ansible.builtin.assert:
+        that:
+          - __openbao_config_test_backup.json.errors == ['no backed-up keys found']
+        quiet: true

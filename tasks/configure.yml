@@ -1,0 +1,35 @@
+---
+# role: openbao_config
+# file: tasks/configure.yml
+
+- name: OPENBAO_CONFIG | Reconcile ACL policies
+  ansible.builtin.include_tasks: policy.yml
+  loop: "{{ openbao_config_policies }}"
+  loop_control:
+    loop_var: __openbao_config_policy
+    label: "{{ __openbao_config_policy.name }}"
+
+- name: OPENBAO_CONFIG | Reconcile AppRole authentication mounts
+  ansible.builtin.include_tasks: mount.yml
+  vars:
+    __openbao_config_mount_api: auth
+  loop: "{{ openbao_config_auth_methods }}"
+  loop_control:
+    loop_var: __openbao_config_mount
+    label: "{{ __openbao_config_mount.path }}"
+
+- name: OPENBAO_CONFIG | Reconcile application AppRoles
+  ansible.builtin.include_tasks: approle.yml
+  loop: "{{ openbao_config_approles }}"
+  loop_control:
+    loop_var: __openbao_config_approle
+    label: "{{ __openbao_config_approle.name }}"
+
+- name: OPENBAO_CONFIG | Reconcile KV version 2 mounts
+  ansible.builtin.include_tasks: mount.yml
+  vars:
+    __openbao_config_mount_api: mounts
+  loop: "{{ openbao_config_secrets_engines }}"
+  loop_control:
+    loop_var: __openbao_config_mount
+    label: "{{ __openbao_config_mount.path }}"

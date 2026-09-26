@@ -1,0 +1,64 @@
+---
+# role: openbao_config
+# file: tasks/session.yml
+
+# Alternate tasks_from entry points do not receive Ansible's automatic main argument validation.
+- name: OPENBAO_CONFIG | Validate the public interface for alternate entry points
+  ansible.builtin.validate_argument_spec:
+    argument_spec: "{{ (lookup('ansible.builtin.file', role_path ~ '/meta/argument_specs.yml') | from_yaml).argument_specs.main.options }}"
+  no_log: true
+  when: __openbao_config_operation != 'configure'
+
+- name: OPENBAO_CONFIG | Validate domain constraints
+  ansible.builtin.import_tasks: assert.yml
+
+- name: OPENBAO_CONFIG | Use an authenticated controller session
+  delegate_to: localhost
+  module_defaults:
+    ansible.builtin.uri: &openbao_config_http
+      ca_path: "{{ openbao_config_ca_file | default(omit) }}"
+      validate_certs: true
+      use_netrc: false
+      follow_redirects: none
+      unredirected_headers: [X-Vault-Token]
+      timeout: "{{ openbao_config_timeout }}"
+      body_format: json
+  block:
+    - name: OPENBAO_CONFIG | Wait for an initialized and unsealed server
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/sys/health"
+      register: __openbao_config_health
+      until: __openbao_config_health.status == 200
+      retries: 20
+      delay: 3
+      check_mode: false
+
+    # Check mode may acquire a short-lived session, but never changes configuration or keys.
+    - name: OPENBAO_CONFIG | Log in using the management AppRole
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/auth/{{ openbao_config_auth_mount }}/login"
+        method: POST
+        body:
+          role_id: "{{ openbao_config_role_id }}"
+          secret_id: "{{ openbao_config_secret_id }}"
+      register: __openbao_config_login
+      no_log: true
+      check_mode: false
+
+    - name: OPENBAO_CONFIG | Apply the selected operation
+      module_defaults:
+        ansible.builtin.uri:
+          <<: *openbao_config_http
+          headers:
+            X-Vault-Token: "{{ __openbao_config_login.json.auth.client_token }}"
+      block:
+        - name: OPENBAO_CONFIG | Execute the entry point
+          ansible.builtin.include_tasks: "{{ __openbao_config_operation }}.yml"
+      always:
+        - name: OPENBAO_CONFIG | Revoke the controller session token
+          ansible.builtin.uri:
+            url: "{{ openbao_config_url }}/v1/auth/token/revoke-self"
+            method: POST
+            status_code: 204
+          no_log: true
+          check_mode: false

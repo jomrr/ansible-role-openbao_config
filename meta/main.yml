@@ -1,0 +1,17 @@
+---
+# role: openbao_config
+# file: meta/main.yml
+
+galaxy_info:
+  author: Jonas Mauer
+  description: Ansible role for managing OpenBao AppRoles, ACL policies, KV v2 mounts and explicit credential operations.
+  galaxy_tags:
+    - ansible
+    - openbao
+    - secrets
+    - approle
+  issue_tracker_url: https://github.com/jomrr/ansible-role-openbao_config/issues
+  license: MIT
+  min_ansible_version: "2.20"
+  namespace: jomrr
+  role_name: openbao_config

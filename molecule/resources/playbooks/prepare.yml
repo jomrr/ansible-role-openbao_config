@@ -1,0 +1,75 @@
+---
+# role: openbao_config
+# file: molecule/resources/playbooks/prepare.yml
+
+- name: OPENBAO_CONFIG | Prepare API integration fixtures
+  hosts: all
+  gather_facts: true
+  vars:
+    __openbao_config_test_server_role: >-
+      {{ lookup('ansible.builtin.env', 'OPENBAO_MOLECULE_SERVER_ROLE') | default('jomrr.openbao_test_server', true) }}
+  tasks:
+    - name: OPENBAO_CONFIG | Reuse the server integration fixtures
+      ansible.builtin.include_tasks: "{{ lookup('ansible.builtin.first_found', __openbao_config_test_fixture) }}"
+      vars:
+        __openbao_config_test_fixture:
+          files: [molecule/resources/tasks/prepare.yml]
+          paths: >-
+            {{ [__openbao_config_test_server_role] + (lookup('ansible.builtin.config', 'DEFAULT_ROLES_PATH')
+            | map('regex_replace', '$', '/jomrr.openbao_test_server') | list) }}
+
+    - name: OPENBAO_CONFIG | Deploy the integration server
+      ansible.builtin.include_role:
+        name: "{{ __openbao_config_test_server_role }}"
+
+    - name: OPENBAO_CONFIG | Fetch the controller trust anchor
+      ansible.builtin.fetch:
+        src: /etc/pki/molecule/openbao.crt
+        dest: "{{ openbao_config_ca_file }}"
+        flat: true
+
+    - name: OPENBAO_CONFIG | Create private fixture directories
+      ansible.builtin.file:
+        path: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/{{ __openbao_config_test_directory }}"
+        state: directory
+        mode: "0700"
+      loop: [gpg, recovery]
+      loop_control:
+        loop_var: __openbao_config_test_directory
+      delegate_to: localhost
+      run_once: true
+
+    - name: OPENBAO_CONFIG | Generate a throwaway recovery custodian key
+      ansible.builtin.command:
+        argv:
+          - gpg
+          - --homedir
+          - "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gpg"
+          - --batch
+          - --pinentry-mode
+          - loopback
+          - --passphrase
+          - ""
+          - --quick-generate-key
+          - molecule-openbao@example.invalid
+          - default
+          - default
+          - 1d
+        creates: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gpg/pubring.kbx"
+      delegate_to: localhost
+      run_once: true
+
+    - name: OPENBAO_CONFIG | Export the public recovery key fixture
+      ansible.builtin.command:
+        argv:
+          - gpg
+          - --homedir
+          - "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gpg"
+          - --batch
+          - --output
+          - "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gpg/recipient.pgp"
+          - --export
+          - molecule-openbao@example.invalid
+        creates: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gpg/recipient.pgp"
+      delegate_to: localhost
+      run_once: true

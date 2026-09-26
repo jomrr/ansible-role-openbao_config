@@ -1,0 +1,103 @@
+---
+# role: openbao_config
+# file: molecule/resources/tasks/verify_resources.yml
+
+- name: OPENBAO_CONFIG | Read the preserved unrelated mount
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/mounts"
+  register: __openbao_config_test_mounts
+  no_log: true
+
+- name: OPENBAO_CONFIG | Assert managed mount tuning and preservation
+  ansible.builtin.assert:
+    that:
+      - "'unrelated/' in __openbao_config_test_mounts.json.data"
+      - __openbao_config_test_mounts.json.data['kv/'].description == 'Application secrets'
+      - __openbao_config_test_mounts.json.data['kv/'].config.max_lease_ttl == 0
+    quiet: true
+
+- name: OPENBAO_CONFIG | Verify the policy still grants application writes
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/policies/acl/application"
+  register: __openbao_config_test_policy
+  no_log: true
+
+- name: OPENBAO_CONFIG | Assert check mode preserved the policy
+  ansible.builtin.assert:
+    that:
+      - __openbao_config_test_policy.json.data.policy == openbao_config_policies[0].rules
+    quiet: true
+
+- name: OPENBAO_CONFIG | Verify the management boundary
+  block:
+    - name: OPENBAO_CONFIG | Attempt to reinterpret the token mount as AppRole
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        openbao_config_auth_methods:
+          - path: token
+            type: approle
+
+    - name: OPENBAO_CONFIG | Fail when the protected mount was accepted
+      ansible.builtin.fail:
+        msg: Protected mount unexpectedly accepted.
+  rescue:
+    - name: OPENBAO_CONFIG | Assert the ownership guard rejected the change
+      ansible.builtin.assert:
+        that:
+          - "'Validate mount paths and ownership' in ansible_failed_task.name"
+        quiet: true
+
+- name: OPENBAO_CONFIG | Create a KV v1 mount outside role management
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/mounts/legacy"
+    method: POST
+    body:
+      type: kv
+      options:
+        version: "1"
+    status_code: 204
+  no_log: true
+
+- name: OPENBAO_CONFIG | Verify incompatible mounts are preserved
+  block:
+    - name: OPENBAO_CONFIG | Request KV v2 at an existing KV v1 path
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        openbao_config_secrets_engines:
+          - path: legacy
+            type: kv
+
+    - name: OPENBAO_CONFIG | Fail when a KV version conflict was accepted
+      ansible.builtin.fail:
+        msg: Incompatible mount unexpectedly accepted.
+  rescue:
+    - name: OPENBAO_CONFIG | Assert explicit migration is required
+      ansible.builtin.assert:
+        that:
+          - "'Refuse replacement of a different mount type' in ansible_failed_task.name"
+        quiet: true
+
+- name: OPENBAO_CONFIG | Explicitly remove the unrelated test mount
+  ansible.builtin.include_role:
+    name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+  vars:
+    openbao_config_secrets_engines:
+      - path: unrelated
+        type: kv
+        state: absent
+
+- name: OPENBAO_CONFIG | Read mounts after explicit removal
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/mounts"
+  register: __openbao_config_test_after_removal
+  no_log: true
+
+- name: OPENBAO_CONFIG | Assert only the requested mount was removed
+  ansible.builtin.assert:
+    that:
+      - "'unrelated/' not in __openbao_config_test_after_removal.json.data"
+      - "'kv/' in __openbao_config_test_after_removal.json.data"
+      - __openbao_config_test_after_removal.json.data['legacy/'].options.version == '1'
+    quiet: true

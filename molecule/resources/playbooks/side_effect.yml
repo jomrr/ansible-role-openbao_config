@@ -1,0 +1,32 @@
+---
+# role: openbao_config
+# file: molecule/resources/playbooks/side_effect.yml
+
+- name: OPENBAO_CONFIG | Introduce configuration drift
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: OPENBAO_CONFIG | Change managed resources and add an unrelated mount
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        openbao_config_policies:
+          - name: application
+            rules: 'path "kv/data/app/*" { capabilities = ["read"] }'
+        openbao_config_auth_methods:
+          - path: approle
+            type: approle
+            description: Changed authentication description
+            default_lease_ttl: 600
+        openbao_config_approles:
+          - name: application
+            role_id: changed-application-role-id
+            token_policies: [application]
+            token_ttl: 300
+        openbao_config_secrets_engines:
+          - path: kv
+            type: kv
+            description: Changed engine description
+            max_lease_ttl: 7200
+          - path: unrelated
+            type: kv

@@ -1,0 +1,47 @@
+---
+# role: openbao_config
+# file: molecule/resources/playbooks/converge.yml
+
+- name: OPENBAO_CONFIG | Converge API configuration
+  hosts: all
+  gather_facts: true
+  roles:
+    - role: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+  tasks:
+    # Exercise all entry points under Molecule's real --check invocation.
+    - name: OPENBAO_CONFIG | Predict changed configuration and explicit credential operations
+      when: ansible_check_mode
+      block:
+        - name: OPENBAO_CONFIG | Read the public recovery key fixture
+          ansible.builtin.slurp:
+            src: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gpg/recipient.pgp"
+          delegate_to: localhost
+          register: __openbao_config_test_check_recipient
+
+        - name: OPENBAO_CONFIG | Predict a changed policy without writing it
+          ansible.builtin.include_role:
+            name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+          vars:
+            openbao_config_policies:
+              - name: application
+                rules: 'path "kv/data/app/*" { capabilities = ["deny"] }'
+
+        - name: OPENBAO_CONFIG | Predict recovery export without creating keys
+          ansible.builtin.include_role:
+            name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+            tasks_from: recovery
+          vars:
+            openbao_config_recovery_pgp_keys: "{{ [__openbao_config_test_check_recipient.content] }}"
+            openbao_config_recovery_threshold: 1
+            openbao_config_recovery_output: >-
+              {{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/recovery/{{ inventory_hostname }}.json
+
+        - name: OPENBAO_CONFIG | Predict Secret ID registration without creating a credential
+          ansible.builtin.include_role:
+            name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+            tasks_from: secret_id
+          vars:
+            openbao_config_secret_id_mount: approle
+            openbao_config_secret_id_role: application
+            openbao_config_secret_id_role_id: molecule-application
+            openbao_config_secret_id_value: molecule-application-secret-id-not-for-production

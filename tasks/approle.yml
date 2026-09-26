@@ -1,0 +1,107 @@
+---
+# role: openbao_config
+# file: tasks/approle.yml
+
+- name: OPENBAO_CONFIG | Read the application AppRole
+  ansible.builtin.uri:
+    url: >-
+      {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default(openbao_config_approle_mount)
+      }}/role/{{ __openbao_config_approle.name }}
+    status_code: [200, 404]
+  register: __openbao_config_approle_read
+  no_log: true
+  check_mode: false
+
+- name: OPENBAO_CONFIG | Reconcile the application AppRole
+  vars:
+    __openbao_config_approle_settings:
+      bind_secret_id: true
+      token_policies: "{{ __openbao_config_approle.token_policies | sort }}"
+      token_ttl: "{{ __openbao_config_approle.token_ttl | default(openbao_config_token_ttl) }}"
+      token_max_ttl: "{{ __openbao_config_approle.token_max_ttl | default(openbao_config_token_max_ttl) }}"
+      secret_id_ttl: "{{ __openbao_config_approle.secret_id_ttl | default(openbao_config_secret_id_ttl) }}"
+      secret_id_num_uses: "{{ __openbao_config_approle.secret_id_num_uses | default(openbao_config_secret_id_num_uses) }}"
+  when:
+    - (__openbao_config_approle.state | default(openbao_config_state)) == 'present'
+    - >-
+      __openbao_config_approle_read.status == 404
+      or (__openbao_config_approle_read.json.data
+      | combine({'token_policies': __openbao_config_approle_read.json.data.token_policies | sort})
+      | dict2items | selectattr('key', 'in', __openbao_config_approle_settings) | items2dict)
+      != __openbao_config_approle_settings
+  block:
+    - name: OPENBAO_CONFIG | Report the planned AppRole update
+      ansible.builtin.debug:
+        msg: "Would write AppRole {{ __openbao_config_approle.name }}."
+      changed_when: true
+      when: ansible_check_mode
+
+    - name: OPENBAO_CONFIG | Write the application AppRole
+      ansible.builtin.uri:
+        url: >-
+          {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default(openbao_config_approle_mount)
+          }}/role/{{ __openbao_config_approle.name }}
+        method: POST
+        body: "{{ __openbao_config_approle_settings }}"
+        status_code: 204
+      no_log: true
+      changed_when: true
+
+- name: OPENBAO_CONFIG | Reconcile a caller-supplied Role ID
+  when:
+    - (__openbao_config_approle.state | default(openbao_config_state)) == 'present'
+    - __openbao_config_approle.role_id is defined
+  block:
+    - name: OPENBAO_CONFIG | Read the application Role ID
+      ansible.builtin.uri:
+        url: >-
+          {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default(openbao_config_approle_mount)
+          }}/role/{{ __openbao_config_approle.name }}/role-id
+        status_code: [200, 404]
+      register: __openbao_config_role_id_read
+      no_log: true
+      check_mode: false
+
+    - name: OPENBAO_CONFIG | Apply a changed application Role ID
+      when: >-
+        __openbao_config_role_id_read.status == 404
+        or __openbao_config_role_id_read.json.data.role_id != __openbao_config_approle.role_id
+      block:
+        - name: OPENBAO_CONFIG | Report the planned Role ID update
+          ansible.builtin.debug:
+            msg: "Would set the Role ID of {{ __openbao_config_approle.name }}."
+          changed_when: true
+          when: ansible_check_mode
+
+        - name: OPENBAO_CONFIG | Write the application Role ID
+          ansible.builtin.uri:
+            url: >-
+              {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default(openbao_config_approle_mount)
+              }}/role/{{ __openbao_config_approle.name }}/role-id
+            method: POST
+            body:
+              role_id: "{{ __openbao_config_approle.role_id }}"
+            status_code: 204
+          no_log: true
+          changed_when: true
+
+- name: OPENBAO_CONFIG | Remove an explicitly absent AppRole
+  when:
+    - (__openbao_config_approle.state | default(openbao_config_state)) == 'absent'
+    - __openbao_config_approle_read.status == 200
+  block:
+    - name: OPENBAO_CONFIG | Report the planned AppRole removal
+      ansible.builtin.debug:
+        msg: "Would remove AppRole {{ __openbao_config_approle.name }}."
+      changed_when: true
+      when: ansible_check_mode
+
+    - name: OPENBAO_CONFIG | Delete the AppRole
+      ansible.builtin.uri:
+        url: >-
+          {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default(openbao_config_approle_mount)
+          }}/role/{{ __openbao_config_approle.name }}
+        method: DELETE
+        status_code: 204
+      no_log: true
+      changed_when: true

@@ -1,0 +1,8 @@
+---
+# role: openbao_config
+# file: tasks/recovery.yml
+
+- name: OPENBAO_CONFIG | Export initial recovery keys
+  ansible.builtin.import_tasks: session.yml
+  vars:
+    __openbao_config_operation: recovery_export

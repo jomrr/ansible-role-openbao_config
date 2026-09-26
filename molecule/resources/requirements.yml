@@ -1,0 +1,7 @@
+---
+# role: openbao_config
+# file: molecule/resources/requirements.yml
+
+- name: jomrr.openbao_test_server
+  src: https://github.com/jomrr/ansible-role-openbao.git
+  version: dev

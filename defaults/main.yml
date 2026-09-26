@@ -1,0 +1,83 @@
+---
+# role: openbao_config
+# file: defaults/main.yml
+
+# HTTPS API address reachable from the Ansible controller, without a trailing slash.
+# openbao_config_url:
+
+# CA bundle on the controller; the system trust store is used when omitted.
+# openbao_config_ca_file:
+
+# AppRole authentication mount used by the controller.
+openbao_config_auth_mount: ansible
+
+# Management Role ID supplied by the caller.
+# openbao_config_role_id:
+
+# Management Secret ID supplied from Ansible Vault.
+# openbao_config_secret_id:
+
+# HTTP request timeout in seconds.
+openbao_config_timeout: 30
+
+# ACL policies managed by name, with HCL rules and an optional present or absent state.
+openbao_config_policies: []
+
+# AppRole authentication mounts managed by path.
+openbao_config_auth_methods: []
+
+# KV version 2 secrets engine mounts managed by path.
+openbao_config_secrets_engines: []
+
+# AppRole definitions managed by name and mount, including their token policies.
+openbao_config_approles: []
+
+# Default desired state for API resources.
+# Choices: present, absent
+openbao_config_state: present
+
+# Default authentication mount for managed application AppRoles.
+openbao_config_approle_mount: approle
+
+# Default lease duration for managed mounts, in seconds; zero inherits the server default.
+openbao_config_mount_default_lease_ttl: 0
+
+# Maximum lease duration for managed mounts, in seconds; zero inherits the server default.
+openbao_config_mount_max_lease_ttl: 0
+
+# Initial lifetime of tokens issued by managed AppRoles, in seconds.
+openbao_config_token_ttl: 900
+
+# Maximum lifetime of tokens issued by managed AppRoles, in seconds.
+openbao_config_token_max_ttl: 3600
+
+# Lifetime of managed AppRole Secret IDs, in seconds; zero requires explicit revocation.
+openbao_config_secret_id_ttl: 0
+
+# Number of allowed logins per managed AppRole Secret ID; zero allows repeated logins.
+openbao_config_secret_id_num_uses: 0
+
+# Base64-encoded binary PGP public keys, required by the recovery entry point.
+# openbao_config_recovery_pgp_keys:
+
+# Recovery quorum, required by the recovery entry point.
+# openbao_config_recovery_threshold:
+
+# Absolute export filename outside source repositories on the controller, required for recovery.
+# openbao_config_recovery_output:
+
+# Authentication mount containing the Secret ID managed by the secret_id entry point.
+openbao_config_secret_id_mount: ansible
+
+# AppRole containing the Secret ID managed by the secret_id entry point.
+openbao_config_secret_id_role: ansible-admin
+
+# Secret ID to register or revoke, required by the secret_id entry point.
+# openbao_config_secret_id_value:
+
+# Role ID used to verify a newly registered Secret ID, required when state is present.
+# openbao_config_secret_id_role_id:
+
+# Explicit operation of the secret_id entry point.
+# Choices: present, absent
+openbao_config_secret_id_state: present

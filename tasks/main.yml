@@ -1,0 +1,8 @@
+---
+# role: openbao_config
+# file: tasks/main.yml
+
+- name: OPENBAO_CONFIG | Reconcile API resources
+  ansible.builtin.import_tasks: session.yml
+  vars:
+    __openbao_config_operation: configure

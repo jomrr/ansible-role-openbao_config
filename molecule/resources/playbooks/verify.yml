@@ -1,0 +1,47 @@
+---
+# role: openbao_config
+# file: molecule/resources/playbooks/verify.yml
+
+- name: OPENBAO_CONFIG | Verify managed resources and credential operations
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: OPENBAO_CONFIG | Authenticate test assertions
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/auth/ansible/login"
+        ca_path: "{{ openbao_config_ca_file }}"
+        method: POST
+        body_format: json
+        body:
+          role_id: "{{ openbao_config_role_id }}"
+          secret_id: "{{ openbao_config_secret_id }}"
+      delegate_to: localhost
+      register: __openbao_config_test_login
+      no_log: true
+
+    - name: OPENBAO_CONFIG | Run authenticated integration assertions
+      delegate_to: localhost
+      module_defaults:
+        ansible.builtin.uri:
+          ca_path: "{{ openbao_config_ca_file }}"
+          body_format: json
+          use_netrc: false
+          follow_redirects: none
+          headers:
+            X-Vault-Token: "{{ __openbao_config_test_login.json.auth.client_token }}"
+      block:
+        - name: OPENBAO_CONFIG | Verify preservation and explicit removal
+          ansible.builtin.import_tasks: ../tasks/verify_resources.yml
+
+        - name: OPENBAO_CONFIG | Verify recovery-key export
+          ansible.builtin.import_tasks: ../tasks/verify_recovery.yml
+
+        - name: OPENBAO_CONFIG | Verify credential rotation
+          ansible.builtin.import_tasks: ../tasks/verify_credentials.yml
+      always:
+        - name: OPENBAO_CONFIG | Revoke the test session
+          ansible.builtin.uri:
+            url: "{{ openbao_config_url }}/v1/auth/token/revoke-self"
+            method: POST
+            status_code: 204
+          no_log: true

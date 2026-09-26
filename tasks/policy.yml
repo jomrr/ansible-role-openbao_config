@@ -1,0 +1,53 @@
+---
+# role: openbao_config
+# file: tasks/policy.yml
+
+- name: OPENBAO_CONFIG | Read the ACL policy
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/policies/acl/{{ __openbao_config_policy.name }}"
+    status_code: [200, 404]
+  register: __openbao_config_policy_read
+  no_log: true
+  check_mode: false
+
+- name: OPENBAO_CONFIG | Apply the ACL policy
+  when:
+    - (__openbao_config_policy.state | default(openbao_config_state)) == 'present'
+    - >-
+      __openbao_config_policy_read.status == 404
+      or __openbao_config_policy_read.json.data.policy | trim != __openbao_config_policy.rules | trim
+  block:
+    - name: OPENBAO_CONFIG | Report the planned ACL policy update
+      ansible.builtin.debug:
+        msg: "Would write policy {{ __openbao_config_policy.name }}."
+      changed_when: true
+      when: ansible_check_mode
+
+    - name: OPENBAO_CONFIG | Write the ACL policy
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/sys/policies/acl/{{ __openbao_config_policy.name }}"
+        method: POST
+        body:
+          policy: "{{ __openbao_config_policy.rules }}"
+        status_code: 204
+      no_log: true
+      changed_when: true
+
+- name: OPENBAO_CONFIG | Remove an explicitly absent ACL policy
+  when:
+    - (__openbao_config_policy.state | default(openbao_config_state)) == 'absent'
+    - __openbao_config_policy_read.status == 200
+  block:
+    - name: OPENBAO_CONFIG | Report the planned ACL policy removal
+      ansible.builtin.debug:
+        msg: "Would remove policy {{ __openbao_config_policy.name }}."
+      changed_when: true
+      when: ansible_check_mode
+
+    - name: OPENBAO_CONFIG | Delete the ACL policy
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/sys/policies/acl/{{ __openbao_config_policy.name }}"
+        method: DELETE
+        status_code: 204
+      no_log: true
+      changed_when: true

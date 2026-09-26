@@ -1,0 +1,128 @@
+---
+# role: openbao_config
+# file: molecule/dev/molecule.yml
+
+dependency:
+  name: "galaxy"
+  options:
+    requirements-file: "${MOLECULE_PROJECT_DIRECTORY}/collections.yml"
+    role-file: "${MOLECULE_PROJECT_DIRECTORY}/molecule/resources/requirements.yml"
+driver:
+  name: "podman"
+provisioner:
+  name: "ansible"
+  config_options:
+    defaults:
+      forks: 8
+      interpreter_python: "auto_silent"
+      allow_world_readable_tmpfiles: true
+      callbacks_enabled: "ansible.builtin.default"
+      callback_result_format: "yaml"
+      remote_tmp: "/tmp/.ansible/tmp"
+      display_ok_hosts: false
+      display_skipped_hosts: false
+      show_task_path_on_failure: true
+    ssh_connection:
+      pipelining: true
+  log: true
+  playbooks:
+    prepare: "../resources/playbooks/prepare.yml"
+    converge: "../resources/playbooks/converge.yml"
+    verify: "../resources/playbooks/verify.yml"
+    side_effect: "../resources/playbooks/side_effect.yml"
+  inventory:
+    group_vars:
+      all:
+        openbao_seal_key: "421a64113eb029ed5d83e3fe4f3d4fadc5a31ed3ca698000b51013aebb7fbad4"
+        openbao_seal_credential_key: "host"
+        openbao_tls_cert_file: "/etc/pki/molecule/openbao.crt"
+        openbao_tls_key_file: "/etc/pki/molecule/openbao.key"
+        openbao_api_addr: "https://127.0.0.1:8200"
+        openbao_api_ca_file: "/etc/pki/molecule/openbao.crt"
+        openbao_bootstrap_enabled: true
+        openbao_bootstrap_role_id: "molecule-controller"
+        openbao_bootstrap_secret_id: "molecule-management-secret-id-not-for-production"
+        openbao_audit_devices:
+          - path: "file"
+            file_path: "/var/log/openbao/audit.json"
+        __openbao_config_test_port: 18200
+        openbao_config_url: "https://127.0.0.1:{{ __openbao_config_test_port }}"
+        openbao_config_ca_file: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/tls/{{ inventory_hostname\
+          \ }}/openbao.crt"
+        openbao_config_role_id: "molecule-controller"
+        openbao_config_secret_id: "molecule-management-secret-id-not-for-production"
+        openbao_config_policies:
+          - name: "application"
+            rules: "path \"kv/data/app/*\" { capabilities = [\"create\", \"read\", \"update\"] }"
+        openbao_config_auth_methods:
+          - path: "approle"
+            type: "approle"
+            description: "Application identities"
+        openbao_config_approles:
+          - name: "application"
+            role_id: "molecule-application"
+            token_policies:
+              - "application"
+        openbao_config_secrets_engines:
+          - path: "kv"
+            type: "kv"
+            description: "Application secrets"
+    host_vars:
+      almalinux-latest-openbao-config:
+        __openbao_config_test_port: 18201
+      fedora-latest-openbao-config:
+        __openbao_config_test_port: 18202
+      opensuse-tumbleweed-latest-openbao-config:
+        __openbao_config_test_port: 18203
+verifier:
+  name: "ansible"
+scenario:
+  test_sequence:
+    - "dependency"
+    - "destroy"
+    - "syntax"
+    - "create"
+    - "prepare"
+    - "converge"
+    - "idempotence"
+    - "check"
+    - "side_effect"
+    - "converge"
+    - "idempotence"
+    - "verify"
+    - "destroy"
+  name: "dev"
+platforms:
+  - name: "almalinux-latest-openbao-config"
+    image: "docker.io/jomrr/molecule-almalinux:latest"
+    pre_build_image: true
+    override_command: false
+    systemd: "true"
+    capabilities:
+      - "SYS_ADMIN"
+    security_opts:
+      - "label=disable"
+    published_ports:
+      - "127.0.0.1:18201:8200"
+  - name: "fedora-latest-openbao-config"
+    image: "docker.io/jomrr/molecule-fedora:latest"
+    pre_build_image: true
+    override_command: false
+    systemd: "true"
+    capabilities:
+      - "SYS_ADMIN"
+    security_opts:
+      - "label=disable"
+    published_ports:
+      - "127.0.0.1:18202:8200"
+  - name: "opensuse-tumbleweed-latest-openbao-config"
+    image: "docker.io/jomrr/molecule-opensuse-tumbleweed:latest"
+    pre_build_image: true
+    override_command: false
+    systemd: "true"
+    capabilities:
+      - "SYS_ADMIN"
+    security_opts:
+      - "label=disable"
+    published_ports:
+      - "127.0.0.1:18203:8200"

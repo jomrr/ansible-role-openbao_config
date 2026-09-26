@@ -1,0 +1,96 @@
+---
+# role: openbao_config
+# file: tasks/mount.yml
+
+- name: OPENBAO_CONFIG | Read existing mounts
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/sys/{{ __openbao_config_mount_api }}"
+  register: __openbao_config_mounts_read
+  no_log: true
+  check_mode: false
+
+- name: OPENBAO_CONFIG | Refuse replacement of a different mount type
+  ansible.builtin.assert:
+    that:
+      - __openbao_config_mounts_read.json.data[__openbao_config_mount.path ~ '/'].type == __openbao_config_mount.type
+      - >-
+        __openbao_config_mount_api != 'mounts'
+        or __openbao_config_mounts_read.json.data[__openbao_config_mount.path ~ '/'].options.version | default('1') == '2'
+    fail_msg: An existing mount has a different type or KV version; migration must be performed explicitly.
+    quiet: true
+  when: (__openbao_config_mount.path ~ '/') in __openbao_config_mounts_read.json.data
+
+- name: OPENBAO_CONFIG | Enable a missing mount
+  when:
+    - (__openbao_config_mount.state | default(openbao_config_state)) == 'present'
+    - (__openbao_config_mount.path ~ '/') not in __openbao_config_mounts_read.json.data
+  block:
+    - name: OPENBAO_CONFIG | Report the planned mount creation
+      ansible.builtin.debug:
+        msg: "Would enable {{ __openbao_config_mount_api }}/{{ __openbao_config_mount.path }}."
+      changed_when: true
+      when: ansible_check_mode
+
+    - name: OPENBAO_CONFIG | Create the mount
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/sys/{{ __openbao_config_mount_api }}/{{ __openbao_config_mount.path }}"
+        method: POST
+        body:
+          type: "{{ __openbao_config_mount.type }}"
+          description: "{{ __openbao_config_mount.description | default('') }}"
+          config:
+            default_lease_ttl: "{{ __openbao_config_mount.default_lease_ttl | default(openbao_config_mount_default_lease_ttl) }}"
+            max_lease_ttl: "{{ __openbao_config_mount.max_lease_ttl | default(openbao_config_mount_max_lease_ttl) }}"
+          options: "{{ {'version': '2'} if __openbao_config_mount_api == 'mounts' else omit }}"
+        status_code: [200, 204]
+      no_log: true
+      changed_when: true
+
+- name: OPENBAO_CONFIG | Tune an existing mount
+  when:
+    - (__openbao_config_mount.state | default(openbao_config_state)) == 'present'
+    - (__openbao_config_mount.path ~ '/') in __openbao_config_mounts_read.json.data
+    - >-
+      __openbao_config_mounts_read.json.data[__openbao_config_mount.path ~ '/'].description
+      != (__openbao_config_mount.description | default(''))
+      or __openbao_config_mounts_read.json.data[__openbao_config_mount.path ~ '/'].config.default_lease_ttl
+      != (__openbao_config_mount.default_lease_ttl | default(openbao_config_mount_default_lease_ttl))
+      or __openbao_config_mounts_read.json.data[__openbao_config_mount.path ~ '/'].config.max_lease_ttl
+      != (__openbao_config_mount.max_lease_ttl | default(openbao_config_mount_max_lease_ttl))
+  block:
+    - name: OPENBAO_CONFIG | Report the planned mount tuning
+      ansible.builtin.debug:
+        msg: "Would tune {{ __openbao_config_mount_api }}/{{ __openbao_config_mount.path }}."
+      changed_when: true
+      when: ansible_check_mode
+
+    - name: OPENBAO_CONFIG | Update mount tuning
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/sys/{{ __openbao_config_mount_api }}/{{ __openbao_config_mount.path }}/tune"
+        method: POST
+        body:
+          description: "{{ __openbao_config_mount.description | default('') }}"
+          default_lease_ttl: "{{ __openbao_config_mount.default_lease_ttl | default(openbao_config_mount_default_lease_ttl) }}"
+          max_lease_ttl: "{{ __openbao_config_mount.max_lease_ttl | default(openbao_config_mount_max_lease_ttl) }}"
+        status_code: 204
+      no_log: true
+      changed_when: true
+
+- name: OPENBAO_CONFIG | Disable an explicitly absent mount
+  when:
+    - (__openbao_config_mount.state | default(openbao_config_state)) == 'absent'
+    - (__openbao_config_mount.path ~ '/') in __openbao_config_mounts_read.json.data
+  block:
+    - name: OPENBAO_CONFIG | Report the planned mount removal
+      ansible.builtin.debug:
+        msg: "Would disable {{ __openbao_config_mount_api }}/{{ __openbao_config_mount.path }} and remove its data."
+      changed_when: true
+      when: ansible_check_mode
+
+    - name: OPENBAO_CONFIG | Delete the mount
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/sys/{{ __openbao_config_mount_api }}/{{ __openbao_config_mount.path }}"
+        method: DELETE
+        status_code: 204
+      no_log: true
+      changed_when: true

@@ -1,0 +1,100 @@
+---
+# role: openbao_config
+# file: tasks/assert.yml
+
+- name: OPENBAO_CONFIG | Validate the API address and authentication mount
+  ansible.builtin.assert:
+    that:
+      - openbao_config_url is match('^https://[^/@?#\\s]+$')
+      - openbao_config_auth_mount is match('^[a-z][a-z0-9_-]*$')
+    quiet: true
+
+- name: OPENBAO_CONFIG | Validate policy names and ownership
+  ansible.builtin.assert:
+    that:
+      - __openbao_config_policy.name is match('^[a-z][a-z0-9_-]*$')
+      - __openbao_config_policy.name not in ['root', 'default', 'ansible-admin']
+      - >-
+        (__openbao_config_policy.state | default(openbao_config_state)) == 'absent'
+        or __openbao_config_policy.rules is defined
+    quiet: true
+  loop: "{{ openbao_config_policies }}"
+  loop_control:
+    loop_var: __openbao_config_policy
+    label: "{{ __openbao_config_policy.name }}"
+
+- name: OPENBAO_CONFIG | Validate mount paths and ownership
+  ansible.builtin.assert:
+    that:
+      - __openbao_config_mount.path is match('^[a-z][a-z0-9_-]*$')
+      - __openbao_config_mount.path not in ['ansible', 'token', 'sys', 'identity', 'cubbyhole']
+      - __openbao_config_mount.path != openbao_config_auth_mount
+    quiet: true
+  loop: "{{ openbao_config_auth_methods + openbao_config_secrets_engines }}"
+  loop_control:
+    loop_var: __openbao_config_mount
+    label: "{{ __openbao_config_mount.path }}"
+
+- name: OPENBAO_CONFIG | Validate AppRole names and ownership
+  ansible.builtin.assert:
+    that:
+      - __openbao_config_approle.name is match('^[a-z][a-z0-9_-]*$')
+      - (__openbao_config_approle.mount | default(openbao_config_approle_mount)) is match('^[a-z][a-z0-9_-]*$')
+      - (__openbao_config_approle.mount | default(openbao_config_approle_mount)) not in ['ansible', openbao_config_auth_mount]
+      - >-
+        (__openbao_config_approle.state | default(openbao_config_state)) == 'absent'
+        or __openbao_config_approle.token_policies is defined
+    quiet: true
+  loop: "{{ openbao_config_approles }}"
+  loop_control:
+    loop_var: __openbao_config_approle
+    label: "{{ __openbao_config_approle.name }}"
+
+- name: OPENBAO_CONFIG | Validate unique resource definitions
+  ansible.builtin.assert:
+    that:
+      - openbao_config_policies | map(attribute='name') | unique | length == openbao_config_policies | length
+      - openbao_config_auth_methods | map(attribute='path') | unique | length == openbao_config_auth_methods | length
+      - openbao_config_secrets_engines | map(attribute='path') | unique | length == openbao_config_secrets_engines | length
+      - >-
+        openbao_config_approles | map(attribute='mount', default=openbao_config_approle_mount)
+        | zip(openbao_config_approles | map(attribute='name')) | unique | length == openbao_config_approles | length
+    quiet: true
+
+- name: OPENBAO_CONFIG | Validate recovery export inputs
+  ansible.builtin.assert:
+    that:
+      - openbao_config_recovery_pgp_keys is defined
+      - openbao_config_recovery_threshold is defined
+      - openbao_config_recovery_output is defined
+    quiet: true
+  when: __openbao_config_operation == 'recovery_export'
+
+- name: OPENBAO_CONFIG | Validate recovery quorum and output path
+  ansible.builtin.assert:
+    that:
+      - openbao_config_recovery_pgp_keys | length > 0
+      - openbao_config_recovery_threshold > 0
+      - openbao_config_recovery_threshold <= openbao_config_recovery_pgp_keys | length
+      - openbao_config_recovery_output is match('^/[^\\s]+$')
+    quiet: true
+  when: __openbao_config_operation == 'recovery_export'
+
+- name: OPENBAO_CONFIG | Validate explicit Secret ID operation inputs
+  ansible.builtin.assert:
+    that:
+      - openbao_config_secret_id_value is defined
+      - openbao_config_secret_id_mount is match('^[a-z][a-z0-9_-]*$')
+      - openbao_config_secret_id_role is match('^[a-z][a-z0-9_-]*$')
+      - openbao_config_secret_id_state == 'absent' or openbao_config_secret_id_role_id is defined
+    quiet: true
+  when: __openbao_config_operation == 'secret_id_manage'
+
+- name: OPENBAO_CONFIG | Protect the currently used Secret ID
+  ansible.builtin.assert:
+    that:
+      - openbao_config_secret_id_value | length >= 32
+      - openbao_config_secret_id_state != 'absent' or openbao_config_secret_id_value != openbao_config_secret_id
+    quiet: true
+  no_log: true
+  when: __openbao_config_operation == 'secret_id_manage'
