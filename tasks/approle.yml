@@ -5,7 +5,7 @@
 - name: OPENBAO_CONFIG | Read the application AppRole
   ansible.builtin.uri:
     url: >-
-      {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default(openbao_config_approle_mount)
+      {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default('approle')
       }}/role/{{ __openbao_config_approle.name }}
     status_code: [200, 404]
   register: __openbao_config_approle_read
@@ -14,21 +14,27 @@
 
 - name: OPENBAO_CONFIG | Reconcile the application AppRole
   vars:
-    __openbao_config_approle_settings:
+    __openbao_config_approle_desired:
       bind_secret_id: true
+      secret_id_bound_cidrs: "{{ __openbao_config_approle.secret_id_bound_cidrs | default([]) | sort }}"
+      token_bound_cidrs: "{{ __openbao_config_approle.token_bound_cidrs | default([]) | sort }}"
       token_policies: "{{ __openbao_config_approle.token_policies | sort }}"
-      token_ttl: "{{ __openbao_config_approle.token_ttl | default(openbao_config_token_ttl) }}"
-      token_max_ttl: "{{ __openbao_config_approle.token_max_ttl | default(openbao_config_token_max_ttl) }}"
-      secret_id_ttl: "{{ __openbao_config_approle.secret_id_ttl | default(openbao_config_secret_id_ttl) }}"
-      secret_id_num_uses: "{{ __openbao_config_approle.secret_id_num_uses | default(openbao_config_secret_id_num_uses) }}"
+      token_ttl: "{{ __openbao_config_approle.token_ttl | default(900) }}"
+      token_max_ttl: "{{ __openbao_config_approle.token_max_ttl | default(3600) }}"
+      secret_id_ttl: "{{ __openbao_config_approle.secret_id_ttl | default(0) }}"
+      secret_id_num_uses: "{{ __openbao_config_approle.secret_id_num_uses | default(0) }}"
+    __openbao_config_approle_current:
+      bind_secret_id: "{{ __openbao_config_approle_read.json.data.bind_secret_id }}"
+      secret_id_bound_cidrs: "{{ __openbao_config_approle_read.json.data.secret_id_bound_cidrs | default([], true) | sort }}"
+      token_bound_cidrs: "{{ __openbao_config_approle_read.json.data.token_bound_cidrs | default([], true) | sort }}"
+      token_policies: "{{ __openbao_config_approle_read.json.data.token_policies | default([], true) | sort }}"
+      token_ttl: "{{ __openbao_config_approle_read.json.data.token_ttl }}"
+      token_max_ttl: "{{ __openbao_config_approle_read.json.data.token_max_ttl }}"
+      secret_id_ttl: "{{ __openbao_config_approle_read.json.data.secret_id_ttl }}"
+      secret_id_num_uses: "{{ __openbao_config_approle_read.json.data.secret_id_num_uses }}"
   when:
-    - (__openbao_config_approle.state | default(openbao_config_state)) == 'present'
-    - >-
-      __openbao_config_approle_read.status == 404
-      or (__openbao_config_approle_read.json.data
-      | combine({'token_policies': __openbao_config_approle_read.json.data.token_policies | sort})
-      | dict2items | selectattr('key', 'in', __openbao_config_approle_settings) | items2dict)
-      != __openbao_config_approle_settings
+    - (__openbao_config_approle.state | default('present')) == 'present'
+    - __openbao_config_approle_read.status == 404 or __openbao_config_approle_current != __openbao_config_approle_desired
   block:
     - name: OPENBAO_CONFIG | Report the planned AppRole update
       ansible.builtin.debug:
@@ -39,23 +45,23 @@
     - name: OPENBAO_CONFIG | Write the application AppRole
       ansible.builtin.uri:
         url: >-
-          {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default(openbao_config_approle_mount)
+          {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default('approle')
           }}/role/{{ __openbao_config_approle.name }}
         method: POST
-        body: "{{ __openbao_config_approle_settings }}"
+        body: "{{ __openbao_config_approle_desired }}"
         status_code: 204
       no_log: true
       changed_when: true
 
 - name: OPENBAO_CONFIG | Reconcile a caller-supplied Role ID
   when:
-    - (__openbao_config_approle.state | default(openbao_config_state)) == 'present'
+    - (__openbao_config_approle.state | default('present')) == 'present'
     - __openbao_config_approle.role_id is defined
   block:
     - name: OPENBAO_CONFIG | Read the application Role ID
       ansible.builtin.uri:
         url: >-
-          {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default(openbao_config_approle_mount)
+          {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default('approle')
           }}/role/{{ __openbao_config_approle.name }}/role-id
         status_code: [200, 404]
       register: __openbao_config_role_id_read
@@ -76,7 +82,7 @@
         - name: OPENBAO_CONFIG | Write the application Role ID
           ansible.builtin.uri:
             url: >-
-              {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default(openbao_config_approle_mount)
+              {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default('approle')
               }}/role/{{ __openbao_config_approle.name }}/role-id
             method: POST
             body:
@@ -87,7 +93,7 @@
 
 - name: OPENBAO_CONFIG | Remove an explicitly absent AppRole
   when:
-    - (__openbao_config_approle.state | default(openbao_config_state)) == 'absent'
+    - (__openbao_config_approle.state | default('present')) == 'absent'
     - __openbao_config_approle_read.status == 200
   block:
     - name: OPENBAO_CONFIG | Report the planned AppRole removal
@@ -99,7 +105,7 @@
     - name: OPENBAO_CONFIG | Delete the AppRole
       ansible.builtin.uri:
         url: >-
-          {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default(openbao_config_approle_mount)
+          {{ openbao_config_url }}/v1/auth/{{ __openbao_config_approle.mount | default('approle')
           }}/role/{{ __openbao_config_approle.name }}
         method: DELETE
         status_code: 204

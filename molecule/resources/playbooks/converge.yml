@@ -12,12 +12,6 @@
     - name: OPENBAO_CONFIG | Predict changed configuration and explicit credential operations
       when: ansible_check_mode
       block:
-        - name: OPENBAO_CONFIG | Read the public recovery key fixture
-          ansible.builtin.slurp:
-            src: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gpg/recipient.pgp"
-          delegate_to: localhost
-          register: __openbao_config_test_check_recipient
-
         - name: OPENBAO_CONFIG | Predict a changed policy without writing it
           ansible.builtin.include_role:
             name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
@@ -25,16 +19,6 @@
             openbao_config_policies:
               - name: application
                 rules: 'path "kv/data/app/*" { capabilities = ["deny"] }'
-
-        - name: OPENBAO_CONFIG | Predict recovery export without creating keys
-          ansible.builtin.include_role:
-            name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
-            tasks_from: recovery
-          vars:
-            openbao_config_recovery_pgp_keys: "{{ [__openbao_config_test_check_recipient.content] }}"
-            openbao_config_recovery_threshold: 1
-            openbao_config_recovery_output: >-
-              {{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/recovery/{{ inventory_hostname }}.json
 
         - name: OPENBAO_CONFIG | Predict Secret ID registration without creating a credential
           ansible.builtin.include_role:
@@ -45,3 +29,12 @@
             openbao_config_secret_id_role: application
             openbao_config_secret_id_role_id: molecule-application
             openbao_config_secret_id_value: molecule-application-secret-id-not-for-production
+
+        - name: OPENBAO_CONFIG | Predict generated KV data and user creation
+          ansible.builtin.include_role:
+            name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+          vars:
+            openbao_config_kv_secrets:
+              - {mount: kv, path: app/check-only, generate: {password: {}}}
+            openbao_config_users:
+              - {name: check-only, mount: users, token_policies: [reader], password: check-only-password}

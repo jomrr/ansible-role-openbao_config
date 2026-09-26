@@ -25,7 +25,7 @@
 - name: OPENBAO_CONFIG | Assert check mode preserved the policy
   ansible.builtin.assert:
     that:
-      - __openbao_config_test_policy.json.data.policy == openbao_config_policies[0].rules
+      - __openbao_config_test_policy.json.data.policy == (openbao_config_policies | selectattr('name', 'equalto', 'application') | first).rules
     quiet: true
 
 - name: OPENBAO_CONFIG | Verify the management boundary

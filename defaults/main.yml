@@ -4,80 +4,102 @@
 
 # HTTPS API address reachable from the Ansible controller, without a trailing slash.
 # openbao_config_url:
+# Example: openbao_config_url: https://bao.example.org:8200
 
 # CA bundle on the controller; the system trust store is used when omitted.
 # openbao_config_ca_file:
+# Example: openbao_config_ca_file: /etc/ssl/certs/internal-ca.pem
 
 # AppRole authentication mount used by the controller.
 openbao_config_auth_mount: ansible
+# Example: openbao_config_auth_mount: approle
 
-# Management Role ID supplied by the caller.
+# AppRole Role ID supplied by the caller for the selected operation.
 # openbao_config_role_id:
+# Example: openbao_config_role_id: ansible-admin
 
-# Management Secret ID supplied from Ansible Vault.
+# AppRole Secret ID supplied by the caller from Ansible Vault.
 # openbao_config_secret_id:
+# Example: openbao_config_secret_id: "{{ vault_openbao_management_secret_id }}"
 
 # HTTP request timeout in seconds.
 openbao_config_timeout: 30
+# Example: openbao_config_timeout: 120
 
 # ACL policies managed by name, with HCL rules and an optional present or absent state.
+# Choices: state: present, absent
 openbao_config_policies: []
+# Example:
+# openbao_config_policies:
+#   - name: reader
+#     rules: 'path "kv/data/app/*" { capabilities = ["read"] }'
 
-# AppRole authentication mounts managed by path.
+# AppRole and userpass authentication mounts managed by path.
+# Choices: type: approle, userpass; state: present, absent
 openbao_config_auth_methods: []
+# Example:
+# openbao_config_auth_methods:
+#   - {path: approle, type: approle}
+#   - {path: users, type: userpass}
 
 # KV version 2 secrets engine mounts managed by path.
+# Choices: type: kv; state: present, absent
 openbao_config_secrets_engines: []
+# Example: openbao_config_secrets_engines: [{path: kv, type: kv}]
 
 # AppRole definitions managed by name and mount, including their token policies.
+# Choices: state: present, absent
 openbao_config_approles: []
+# Example:
+# openbao_config_approles:
+#   - name: reader
+#     token_policies: [reader]
+#     secret_id_bound_cidrs: [192.0.2.0/24]
+#     token_bound_cidrs: [192.0.2.0/24]
 
-# Default desired state for API resources.
-# Choices: present, absent
-openbao_config_state: present
+# Userpass users managed by name and mount; passwords are set only on creation.
+# Choices: state: present, absent
+openbao_config_users: []
+# Example:
+# openbao_config_users:
+#   - name: operator
+#     mount: users
+#     token_policies: [reader]
+#     password: "{{ vault_openbao_operator_password }}"
 
-# Default authentication mount for managed application AppRoles.
-openbao_config_approle_mount: approle
-
-# Default lease duration for managed mounts, in seconds; zero inherits the server default.
-openbao_config_mount_default_lease_ttl: 0
-
-# Maximum lease duration for managed mounts, in seconds; zero inherits the server default.
-openbao_config_mount_max_lease_ttl: 0
-
-# Initial lifetime of tokens issued by managed AppRoles, in seconds.
-openbao_config_token_ttl: 900
-
-# Maximum lifetime of tokens issued by managed AppRoles, in seconds.
-openbao_config_token_max_ttl: 3600
-
-# Lifetime of managed AppRole Secret IDs, in seconds; zero requires explicit revocation.
-openbao_config_secret_id_ttl: 0
-
-# Number of allowed logins per managed AppRole Secret ID; zero allows repeated logins.
-openbao_config_secret_id_num_uses: 0
-
-# Base64-encoded binary PGP public keys, required by the recovery entry point.
-# openbao_config_recovery_pgp_keys:
-
-# Recovery quorum, required by the recovery entry point.
-# openbao_config_recovery_threshold:
-
-# Absolute export filename outside source repositories on the controller, required for recovery.
-# openbao_config_recovery_output:
+# KV v2 secrets with reconciled data and generated values retained after creation.
+# Choices: state: present, absent
+openbao_config_kv_secrets: []
+# Example:
+# openbao_config_kv_secrets:
+#   - mount: kv
+#     path: app/database
+#     generate:
+#       password: {length: 40, chars: [ascii_letters, digits]}
+#     data: {username: application}
 
 # Authentication mount containing the Secret ID managed by the secret_id entry point.
 openbao_config_secret_id_mount: ansible
+# Example: openbao_config_secret_id_mount: approle
 
 # AppRole containing the Secret ID managed by the secret_id entry point.
 openbao_config_secret_id_role: ansible-admin
+# Example: openbao_config_secret_id_role: reader
 
 # Secret ID to register or revoke, required by the secret_id entry point.
 # openbao_config_secret_id_value:
+# Example: openbao_config_secret_id_value: "{{ vault_application_secret_id }}"
 
-# Role ID used to verify a newly registered Secret ID, required when state is present.
+# Role ID required when the Secret ID state is present and login verification is enabled.
 # openbao_config_secret_id_role_id:
+# Example: openbao_config_secret_id_role_id: application-reader
+
+# Verify present Secret IDs by logging in from the controller and revoking the test token.
+# Choices: true, false
+openbao_config_secret_id_verify: true
+# Example: openbao_config_secret_id_verify: false
 
 # Explicit operation of the secret_id entry point.
 # Choices: present, absent
 openbao_config_secret_id_state: present
+# Example: openbao_config_secret_id_state: absent

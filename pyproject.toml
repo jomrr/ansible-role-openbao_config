@@ -1,7 +1,7 @@
 [project]
 name = "openbao_config"
 version = "0.0.0"
-description = "Ansible role for managing OpenBao AppRoles, ACL policies, KV v2 mounts and explicit credential operations."
+description = "Ansible role for managing OpenBao policies, identities, KV v2 secrets and explicit credential operations."
 requires-python = ">=3.12"
 authors = [
   { name = "Jonas Mauer" },

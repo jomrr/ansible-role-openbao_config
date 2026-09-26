@@ -1,0 +1,82 @@
+---
+# role: openbao_config
+# file: molecule/resources/tasks/verify_kv.yml
+
+- name: OPENBAO_CONFIG | Read the reconciled KV secret
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/kv/data/app/managed"
+  register: __openbao_config_test_kv
+  no_log: true
+
+- name: OPENBAO_CONFIG | Assert KV drift repair and stable generation
+  ansible.builtin.assert:
+    that:
+      - __openbao_config_test_kv.json.data.data.username == 'application'
+      - "__openbao_config_test_kv.json.data.data.nested == {'desired': true}"
+      - __openbao_config_test_kv.json.data.data.additional == 'preserved'
+      - __openbao_config_test_kv.json.data.metadata.version == 3
+      - __openbao_config_test_kv.json.data.data.password | length == 40
+      - >-
+        __openbao_config_test_kv.json.data.data.password == (lookup('ansible.builtin.file',
+        lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') ~ '/before-drift-' ~ inventory_hostname ~ '.json') | from_json).password
+    quiet: true
+  no_log: true
+
+- name: OPENBAO_CONFIG | Create a disposable KV secret
+  ansible.builtin.include_role:
+    name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+  vars:
+    openbao_config_kv_secrets:
+      - mount: kv
+        path: app/disposable
+        data: {value: original}
+
+- name: OPENBAO_CONFIG | Soft delete the disposable current version
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/kv/data/app/disposable"
+    method: DELETE
+    status_code: 204
+  no_log: true
+
+- name: OPENBAO_CONFIG | Verify deleted data is never silently regenerated
+  block:
+    - name: OPENBAO_CONFIG | Attempt to regenerate a soft-deleted secret
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        openbao_config_kv_secrets:
+          - mount: kv
+            path: app/disposable
+            generate: {value: {}}
+
+    - name: OPENBAO_CONFIG | Fail if a deleted secret was regenerated
+      ansible.builtin.fail:
+        msg: Deleted secret was unexpectedly regenerated.
+  rescue:
+    - name: OPENBAO_CONFIG | Assert the tombstone guard rejected regeneration
+      ansible.builtin.assert:
+        that:
+          - "'Refuse regenerating a deleted or destroyed secret' in ansible_failed_task.name"
+        quiet: true
+
+- name: OPENBAO_CONFIG | Remove all versions of the disposable secret twice
+  ansible.builtin.include_role:
+    name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+  vars:
+    openbao_config_kv_secrets:
+      - {mount: kv, path: app/disposable, state: absent}
+  loop: [first, repeated]
+  loop_control:
+    loop_var: __openbao_config_test_removal
+
+- name: OPENBAO_CONFIG | Assert the metadata is gone
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/kv/metadata/app/disposable"
+    status_code: 404
+  no_log: true
+
+- name: OPENBAO_CONFIG | Assert check mode did not create a KV version
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/kv/metadata/app/check-only"
+    status_code: 404
+  no_log: true

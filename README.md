@@ -6,46 +6,47 @@
 [![dev](https://img.shields.io/github/actions/workflow/status/jomrr/ansible-role-openbao_config/dev.yml?branch=dev&label=dev)](https://github.com/jomrr/ansible-role-openbao_config/actions/workflows/dev.yml?query=branch%3Adev)
 [![main](https://img.shields.io/github/actions/workflow/status/jomrr/ansible-role-openbao_config/main.yml?branch=main&label=main)](https://github.com/jomrr/ansible-role-openbao_config/actions/workflows/main.yml?query=branch%3Amain)
 
-Ansible role for managing OpenBao AppRoles, ACL policies, KV v2 mounts and
+Ansible role for managing OpenBao policies, identities, KV v2 secrets and
 explicit credential operations.
 
 ## Purpose
 
 This role manages OpenBao API configuration from the Ansible controller. It
 reconciles named ACL policies,
-AppRole mounts and roles, and KV version 2 mounts. API resources not listed in
-the inputs are preserved.
-Separate recovery and secret_id entry points perform deliberate credential
-operations.
+AppRole and userpass identities, KV version 2 mounts and secret values. API
+resources not listed in the inputs are preserved.
+The separate secret_id entry point registers, optionally verifies and revokes
+credentials.
 
 ## Scope
 
 ### Managed
 
 - ACL policy contents and explicit removal
-- AppRole authentication mounts and lease tuning
-- Application AppRoles, optional Role IDs, token policies and TTLs
-- KV version 2 secrets engine mounts and lease tuning
-- Initial PGP-encrypted recovery-key export through an explicit entry point
-- Explicit registration, login verification and revocation of individual Secret
-  IDs
+- AppRole and userpass authentication mounts and lease tuning
+- Application AppRoles, optional Role IDs, token policies, TTLs and CIDR
+  restrictions
+- Userpass users with initial passwords, token policies and CIDR restrictions
+- KV version 2 mounts, reconciled secret values and one-time generation of
+  missing keys
+- Explicit registration, optional login verification and revocation of
+  individual Secret IDs
 
 ### Not Managed
 
 - Server installation, TLS, seal configuration, self-initialization and
   audit-device configuration
-- Secret values, KV version upgrades, PKI, database or SSH engine configuration
+- KV version upgrades, PKI, database or SSH engine configuration
 - Automatic resource pruning or replacement of existing mount types
-- Rotation of existing recovery keys or automatic root-token generation
+- Backups, snapshots, recovery workflows and root-token generation
 - Ansible Vault encryption, editing and distribution of caller credentials
 
 ## Requirements
 
 - OpenBao 2.4 or newer, initialized and unsealed, with HTTPS reachable from the
   controller.
-- A management AppRole authorized for the declared configuration and credential
-  operations. The optional jomrr.openbao bootstrap provides the ansible/ mount
-  and ansible-admin AppRole and policy.
+- An AppRole authorized for the selected operation. The optional jomrr.openbao
+  bootstrap provides the ansible/ mount and ansible-admin AppRole and policy.
 - The jomrr.openbao Galaxy role dependency provisions integration test servers
   only; it is not run by this role's normal entry points. Set
   OPENBAO_MOLECULE_SERVER_ROLE to a local checkout when testing unpublished
@@ -74,13 +75,13 @@ path.
 
 Type: `path`. Required: `false`.
 
-CA bundle on the controller; omitted to use the system trust store.
+CA bundle on the controller; omitted to use the controller's system trust store.
 
 ### `openbao_config_auth_mount`
 
 Type: `str`. Required: `false`.
 
-Authentication mount of the controller management AppRole.
+Authentication mount of the caller-supplied AppRole.
 
 Default:
 
@@ -92,13 +93,14 @@ openbao_config_auth_mount: ansible
 
 Type: `str`. Required: `true`.
 
-Role ID of the controller management AppRole.
+Role ID of the caller-supplied AppRole for the selected operation.
 
 ### `openbao_config_secret_id`
 
 Type: `str`. Required: `true`.
 
-Management Secret ID from Ansible Vault outside this OpenBao instance.
+Caller-supplied AppRole Secret ID from Ansible Vault outside this OpenBao
+instance.
 
 ### `openbao_config_timeout`
 
@@ -110,103 +112,6 @@ Default:
 
 ```yaml
 openbao_config_timeout: 30
-```
-
-### `openbao_config_state`
-
-Type: `str`. Required: `false`.
-
-Default desired state for resource items without an explicit state.
-
-Default:
-
-```yaml
-openbao_config_state: present
-```
-
-### `openbao_config_approle_mount`
-
-Type: `str`. Required: `false`.
-
-Default mount for managed application AppRoles.
-
-Default:
-
-```yaml
-openbao_config_approle_mount: approle
-```
-
-### `openbao_config_mount_default_lease_ttl`
-
-Type: `int`. Required: `false`.
-
-Default mount lease TTL in seconds; zero inherits the server default.
-
-Default:
-
-```yaml
-openbao_config_mount_default_lease_ttl: 0
-```
-
-### `openbao_config_mount_max_lease_ttl`
-
-Type: `int`. Required: `false`.
-
-Maximum mount lease TTL in seconds; zero inherits the server default.
-
-Default:
-
-```yaml
-openbao_config_mount_max_lease_ttl: 0
-```
-
-### `openbao_config_token_ttl`
-
-Type: `int`. Required: `false`.
-
-Initial token TTL in seconds for managed AppRoles.
-
-Default:
-
-```yaml
-openbao_config_token_ttl: 900
-```
-
-### `openbao_config_token_max_ttl`
-
-Type: `int`. Required: `false`.
-
-Maximum token TTL in seconds for managed AppRoles.
-
-Default:
-
-```yaml
-openbao_config_token_max_ttl: 3600
-```
-
-### `openbao_config_secret_id_ttl`
-
-Type: `int`. Required: `false`.
-
-Secret ID TTL in seconds for managed AppRoles; zero requires explicit
-revocation.
-
-Default:
-
-```yaml
-openbao_config_secret_id_ttl: 0
-```
-
-### `openbao_config_secret_id_num_uses`
-
-Type: `int`. Required: `false`.
-
-Login limit for managed AppRole Secret IDs; zero allows repeated use.
-
-Default:
-
-```yaml
-openbao_config_secret_id_num_uses: 0
 ```
 
 ### `openbao_config_policies`
@@ -225,8 +130,8 @@ openbao_config_policies: []
 
 Type: `list`. Required: `false`.
 
-AppRole authentication mounts; deleting a mount also removes its roles and
-credentials.
+AppRole and userpass authentication mounts; deletion also removes their
+identities and credentials.
 
 Default:
 
@@ -259,27 +164,31 @@ Default:
 openbao_config_approles: []
 ```
 
-### `openbao_config_recovery_pgp_keys`
+### `openbao_config_users`
 
 Type: `list`. Required: `false`.
 
-Required by recovery; base64-encoded binary PGP public keys, one per share, in
-recipient order.
+Userpass users; passwords are set only at creation and omitted users are
+preserved.
 
-### `openbao_config_recovery_threshold`
+Default:
 
-Type: `int`. Required: `false`.
+```yaml
+openbao_config_users: []
+```
 
-Required by recovery; number of shares required for the recovery quorum.
+### `openbao_config_kv_secrets`
 
-### `openbao_config_recovery_output`
+Type: `list`. Required: `false`.
 
-Type: `path`. Required: `false`.
+KV v2 secrets with reconciled data and generated values; writes use check and
+set.
 
-Required by recovery; absolute export filename in an existing private controller
-directory with mode 0700.
-Stores only PGP-encrypted shares; use a path outside source repositories and
-back it up independently.
+Default:
+
+```yaml
+openbao_config_kv_secrets: []
+```
 
 ### `openbao_config_secret_id_mount`
 
@@ -316,26 +225,36 @@ revoke.
 
 Type: `str`. Required: `false`.
 
-Required by secret_id when state is present; Role ID used to verify the
-registered credential.
+Required by secret_id when state is present and openbao_config_secret_id_verify
+is true.
+
+### `openbao_config_secret_id_verify`
+
+Type: `bool`. Required: `false`.
+
+Log in from the controller with a present Secret ID and revoke the verification
+token.
+Disable explicitly when the controller is outside the application AppRole's
+allowed source networks.
+
+Default:
+
+```yaml
+openbao_config_secret_id_verify: true
+```
 
 ### `openbao_config_secret_id_state`
 
 Type: `str`. Required: `false`.
 
-Explicit secret_id operation; present registers and verifies, absent revokes the
-selected credential.
+Explicit secret_id operation; present registers and optionally verifies, absent
+revokes the selected credential.
 
 Default:
 
 ```yaml
 openbao_config_secret_id_state: present
 ```
-
-## Managed Files
-
-- `openbao_config_recovery_output` Explicit recovery export on the controller,
-  mode 0600, containing PGP-encrypted shares and cluster metadata.
 
 ## Check Mode
 
@@ -344,14 +263,15 @@ applying them.
 
 - AppRole login acquires a short-lived token even in check mode; the token is
   revoked at the end of the invocation.
-- Recovery and Secret ID entry points do not generate, register, revoke or
-  export keys in check mode.
+- The secret_id entry point does not register or revoke credentials in check
+  mode.
+- KV changes do not generate values or write secrets in check mode.
 - There is no offline simulation for an unreachable or uninitialized server.
 
 ## Service Behavior
 
-API configuration does not install packages or restart OpenBao. All HTTP
-operations run on the controller.
+API configuration runs on the controller and does not install packages or
+restart OpenBao.
 
 ## Security Notes
 
@@ -367,39 +287,45 @@ operations run on the controller.
   normal resource lists. Removing a secrets-engine mount with state=absent
   destroys its data; removing an auth mount removes its identities and
   credentials.
-- Recovery exports contain only PGP-encrypted shares. Private PGP keys belong to
-  the custodians and are never supplied to this role. Recovery keys cannot
-  substitute for the static seal key when decrypting storage.
 
 ## Operational Notes
 
+- KV data keys are reconciled on every run, replacing each declared value
+  including nested mappings. Additional keys are preserved. Generate maps key
+  names to optional length and chars password-lookup settings; only missing keys
+  are generated, with no local password file. Length defaults to 32 and chars to
+  [ascii_letters, digits] for each key; override them in that key's generate
+  settings. Data and generate must not overlap. Writes use the current version
+  as CAS and concurrent modifications fail instead of being overwritten.
+  Soft-deleted or destroyed current versions require explicit restoration or
+  metadata deletion before recreation. State absent deletes metadata and every
+  version permanently.
+- Read secrets in the consuming playbook: store one
+  community.hashi_vault.vault_login result for the Reader-AppRole with set_fact,
+  pass its token to community.hashi_vault.vault_kv2_get lookups, and revoke-self
+  in an always block. Protect login and secret-consuming tasks with no_log.
+  These lookups require community.hashi_vault and hvac on the controller.
+- User passwords are required on creation and never sent during updates, even
+  when the input changes. AppRole secret_id_bound_cidrs and AppRole/userpass
+  token_bound_cidrs default to empty lists without source restrictions. Set them
+  per item; empty lists remove existing bindings. CIDRs must match the API
+  representation; no address normalization is performed. Use bare addresses for
+  individual hosts, such as 192.0.2.10 or ::1. Host suffixes /32 and /128 are
+  rejected before API mutation.
+- Item state defaults to present for policies, authentication mounts,
+  secrets-engine mounts, AppRoles, users and KV secrets. Both mount lease TTLs
+  default to 0, inheriting the server defaults. Set overrides on the individual
+  item. AppRoles default to mount approle, token_ttl 900 and token_max_ttl 3600
+  seconds, secret_id_ttl 0 (no expiry), and secret_id_num_uses 0 (unlimited
+  use). These defaults have no role-wide override variables.
 - Run one invocation per OpenBao instance at a time, normally in a localhost
   play. API addresses have no trailing slash or path. Resource names and mount
   paths use lowercase letters, digits, underscores and hyphens. A mount may be
   declared only once; each AppRole is identified by its name within its mount.
-- Main reconciles only configuration. Use ansible.builtin.include_role with
-  tasks_from=recovery to generate initial recovery keys, or tasks_from=secret_id
-  to register or revoke a credential. All entry points require
-  openbao_config_url, openbao_config_role_id and openbao_config_secret_id.
-- For recovery, supply one base64-encoded binary PGP public key per share, the
-  quorum and an absolute output filename in an existing controller directory
-  with mode 0700 outside source repositories. Export public keys with gpg
-  --export and encode those binary bytes as base64; do not pass ASCII-armored
-  keys or key identifiers.
-- Recovery records a recipient manifest at the output path before creating
-  server-side PGP-encrypted backups. It then saves the encrypted shares
-  atomically with mode 0600, verifies the saved contents and deletes the server
-  backup. Retry the same invocation after an interruption, preserving the
-  manifest and output path. Existing keys without a matching local manifest and
-  encrypted shares locally or in the server backup cause failure; they are never
-  silently replaced. A manifest without a backup field is not a completed
-  export. Back up the export independently and distribute each encrypted share
-  to its corresponding custodian.
-- This entry point creates the first recovery key set only. Existing
-  recovery-key rotation, export validation by custodians and quorum ceremonies
-  use the authenticated OpenBao rotation workflow. An existing local export is
-  not proof that externally rotated keys still match it; update custody records
-  after any external rotation.
+- Main reconciles declared configuration, users and KV secrets. Use
+  ansible.builtin.include_role with tasks_from=secret_id to register or revoke a
+  credential. Both entry points require openbao_config_url,
+  openbao_config_role_id and openbao_config_secret_id.
 - To change the management Secret ID, store a new random value in Ansible Vault
   alongside the old value. Invoke secret_id with state=present using the old
   login and the new value; the role verifies the new login while retaining the
@@ -408,14 +334,15 @@ operations run on the controller.
   state=absent for the old value. The currently used credential cannot be
   revoked.
 - The secret_id entry point also provisions application credentials by selecting
-  their mount, AppRole and Role ID. Login verification consumes one use of a
-  usage-limited Secret ID. Token policies must permit self-revocation; the
-  standard default policy provides this permission.
-- For emergency administration, use the OpenBao generate-root quorum workflow
-  with the recovery custodians. Protect its OTP or PGP recipient, submit the
-  required shares, use the resulting token only for recovery, then revoke it.
-  Neither normal convergence nor the recovery export creates or retains a root
-  token.
+  their mount, AppRole and Role ID. Login verification defaults to enabled and
+  consumes one use of a usage-limited Secret ID. Set
+  openbao_config_secret_id_verify=false when the controller is outside the
+  application's secret_id_bound_cidrs. In that case no test login is attempted,
+  no use is consumed, and openbao_config_secret_id_role_id is optional.
+  Registration alone does not prove that the application can log in.
+  Verification tokens must permit self-revocation; the standard default policy
+  provides this permission. The management session is always revoked
+  independently.
 
 ## Supported Platforms
 
@@ -463,23 +390,6 @@ The application policy permits access only beneath its own KV prefix.
             type: kv
 ```
 
-### Export initial recovery keys
-
-Connection variables use the same values as the preceding example.
-The private export directory already exists.
-
-```yaml
-- name: Export PGP-encrypted recovery shares
-  ansible.builtin.include_role:
-    name: jomrr.openbao_config
-    tasks_from: recovery
-  vars:
-    openbao_config_recovery_pgp_keys: >-
-      {{ recovery_custodian_public_keys }}
-    openbao_config_recovery_threshold: 3
-    openbao_config_recovery_output: /srv/private/openbao-recovery.json
-```
-
 ### Register a replacement management credential
 
 Keep the old login valid until Ansible Vault consumers have switched to the
@@ -498,12 +408,43 @@ After switching, invoke the same entry point with the old value and state=absent
     openbao_config_secret_id_state: present
 ```
 
+### Reconcile generated and declared KV keys
+
+```yaml
+- name: Configure application secrets
+  ansible.builtin.include_role:
+    name: jomrr.openbao_config
+  vars:
+    openbao_config_kv_secrets:
+      - mount: applications
+        path: example/database
+        generate:
+          password: {length: 32, chars: [ascii_letters, digits]}
+        data:
+          username: example
+```
+
+### Register an application credential without a controller test login
+
+```yaml
+- name: Register a credential restricted to the application's network
+  ansible.builtin.include_role:
+    name: jomrr.openbao_config
+    tasks_from: secret_id
+  vars:
+    openbao_config_secret_id_mount: approle
+    openbao_config_secret_id_role: application
+    openbao_config_secret_id_value: "{{ vault_application_secret_id }}"
+    openbao_config_secret_id_verify: false
+```
+
 ## References
 
+- [Vault login lookup](https://docs.ansible.com/ansible/latest/collections/community/hashi_vault/vault_login_lookup.html)
+- [KV v2 lookup](https://docs.ansible.com/ansible/latest/collections/community/hashi_vault/vault_kv2_get_lookup.html)
+- [OpenBao KV v2 API](https://openbao.org/docs/api/secret/kv/kv-v2/)
+- [OpenBao userpass API](https://openbao.org/docs/api/auth/userpass/)
 - [OpenBao AppRole API](https://openbao.org/docs/api/auth/approle/)
-- [OpenBao recovery-key generation](https://openbao.org/docs/api/system/rotate/init/)
-- [OpenBao recovery-key backups](https://openbao.org/docs/api/system/rotate/backup/)
-- [OpenBao generate-root](https://openbao.org/docs/commands/operator/generate-root/)
 
 ## Author
 

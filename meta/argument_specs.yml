@@ -8,8 +8,8 @@ argument_specs:
     description:
       - Reconciles declared API resources using short-lived AppRole sessions and verified
         HTTPS connections.
-      - Provides explicit recovery and secret_id task entry points; normal runs never generate
-        or rotate credentials.
+      - Provides an explicit secret_id entry point; existing generated secrets and user
+        passwords are preserved.
     options:
       openbao_config_url:
         type: str
@@ -20,71 +20,28 @@ argument_specs:
       openbao_config_ca_file:
         type: path
         description:
-          - CA bundle on the controller; omitted to use the system trust store.
+          - CA bundle on the controller; omitted to use the controller's system trust store.
       openbao_config_auth_mount:
         type: str
         default: ansible
         description:
-          - Authentication mount of the controller management AppRole.
+          - Authentication mount of the caller-supplied AppRole.
       openbao_config_role_id:
         type: str
         required: true
         description:
-          - Role ID of the controller management AppRole.
+          - Role ID of the caller-supplied AppRole for the selected operation.
       openbao_config_secret_id:
         type: str
         required: true
         no_log: true
         description:
-          - Management Secret ID from Ansible Vault outside this OpenBao instance.
+          - Caller-supplied AppRole Secret ID from Ansible Vault outside this OpenBao instance.
       openbao_config_timeout:
         type: int
         default: 30
         description:
           - HTTP request timeout in seconds.
-      openbao_config_state:
-        type: str
-        choices:
-          - present
-          - absent
-        default: present
-        description:
-          - Default desired state for resource items without an explicit state.
-      openbao_config_approle_mount:
-        type: str
-        default: approle
-        description:
-          - Default mount for managed application AppRoles.
-      openbao_config_mount_default_lease_ttl:
-        type: int
-        default: 0
-        description:
-          - Default mount lease TTL in seconds; zero inherits the server default.
-      openbao_config_mount_max_lease_ttl:
-        type: int
-        default: 0
-        description:
-          - Maximum mount lease TTL in seconds; zero inherits the server default.
-      openbao_config_token_ttl:
-        type: int
-        default: 900
-        description:
-          - Initial token TTL in seconds for managed AppRoles.
-      openbao_config_token_max_ttl:
-        type: int
-        default: 3600
-        description:
-          - Maximum token TTL in seconds for managed AppRoles.
-      openbao_config_secret_id_ttl:
-        type: int
-        default: 0
-        description:
-          - Secret ID TTL in seconds for managed AppRoles; zero requires explicit revocation.
-      openbao_config_secret_id_num_uses:
-        type: int
-        default: 0
-        description:
-          - Login limit for managed AppRole Secret IDs; zero allows repeated use.
       openbao_config_policies:
         type: list
         elements: dict
@@ -106,14 +63,16 @@ argument_specs:
             choices:
               - present
               - absent
+            default: present
             description:
-              - Desired policy state; defaults to openbao_config_state.
+              - Desired policy state; defaults to present.
       openbao_config_auth_methods:
         type: list
         elements: dict
         default: []
         description:
-          - AppRole authentication mounts; deleting a mount also removes its roles and credentials.
+          - AppRole and userpass authentication mounts; deletion also removes their identities
+            and credentials.
         options:
           path:
             type: str
@@ -126,27 +85,32 @@ argument_specs:
             required: true
             choices:
               - approle
+              - userpass
             description:
-              - Authentication backend type; currently approle.
+              - Authentication backend type.
           description:
             type: str
             description:
               - Mount description; defaults to an empty string.
           default_lease_ttl:
             type: int
+            default: 0
             description:
-              - Lease TTL override in seconds; defaults to openbao_config_mount_default_lease_ttl.
+              - Lease TTL override in seconds; defaults to 0 to inherit the server default.
           max_lease_ttl:
             type: int
+            default: 0
             description:
-              - Maximum lease TTL override in seconds; defaults to openbao_config_mount_max_lease_ttl.
+              - Maximum lease TTL override in seconds; defaults to 0 to inherit the server
+                default.
           state:
             type: str
             choices:
               - present
               - absent
+            default: present
             description:
-              - Desired mount state; defaults to openbao_config_state.
+              - Desired mount state; defaults to present.
       openbao_config_secrets_engines:
         type: list
         elements: dict
@@ -173,19 +137,23 @@ argument_specs:
               - Mount description; defaults to an empty string.
           default_lease_ttl:
             type: int
+            default: 0
             description:
-              - Lease TTL override in seconds; defaults to openbao_config_mount_default_lease_ttl.
+              - Lease TTL override in seconds; defaults to 0 to inherit the server default.
           max_lease_ttl:
             type: int
+            default: 0
             description:
-              - Maximum lease TTL override in seconds; defaults to openbao_config_mount_max_lease_ttl.
+              - Maximum lease TTL override in seconds; defaults to 0 to inherit the server
+                default.
           state:
             type: str
             choices:
               - present
               - absent
+            default: present
             description:
-              - Desired mount state; defaults to openbao_config_state.
+              - Desired mount state; defaults to present.
       openbao_config_approles:
         type: list
         elements: dict
@@ -201,8 +169,9 @@ argument_specs:
               - AppRole name within the selected mount.
           mount:
             type: str
+            default: approle
             description:
-              - Authentication mount; defaults to openbao_config_approle_mount.
+              - Authentication mount; defaults to approle.
           role_id:
             type: str
             description:
@@ -214,44 +183,138 @@ argument_specs:
               - Policies granted at login, required when the effective state is present.
           token_ttl:
             type: int
+            default: 900
             description:
-              - Initial token TTL override in seconds; defaults to openbao_config_token_ttl.
+              - Initial token TTL override in seconds; defaults to 900.
           token_max_ttl:
             type: int
+            default: 3600
             description:
-              - Maximum token TTL override in seconds; defaults to openbao_config_token_max_ttl.
+              - Maximum token TTL override in seconds; defaults to 3600.
           secret_id_ttl:
             type: int
+            default: 0
             description:
-              - Secret ID TTL override in seconds; defaults to openbao_config_secret_id_ttl.
+              - Secret ID TTL override in seconds; defaults to 0 for no expiry.
           secret_id_num_uses:
             type: int
+            default: 0
             description:
-              - Secret ID login limit override; defaults to openbao_config_secret_id_num_uses.
+              - Secret ID login limit override; defaults to 0 for unlimited use.
+          secret_id_bound_cidrs:
+            type: list
+            elements: str
+            default: []
+            description:
+              - Allowed Secret ID source networks; defaults to an empty list without source
+                restrictions.
+              - Use API-formatted networks or bare host addresses; /32 and /128 host suffixes
+                are rejected.
+          token_bound_cidrs:
+            type: list
+            elements: str
+            default: []
+            description:
+              - Allowed token source networks; defaults to an empty list without source
+                restrictions.
+              - Use API-formatted networks or bare host addresses; /32 and /128 host suffixes
+                are rejected.
           state:
             type: str
             choices:
               - present
               - absent
+            default: present
             description:
-              - Desired AppRole state; defaults to openbao_config_state.
-      openbao_config_recovery_pgp_keys:
+              - Desired AppRole state; defaults to present.
+      openbao_config_users:
         type: list
-        elements: str
+        elements: dict
+        default: []
         description:
-          - Required by recovery; base64-encoded binary PGP public keys, one per share,
-            in recipient order.
-      openbao_config_recovery_threshold:
-        type: int
+          - Userpass users; passwords are set only at creation and omitted users are preserved.
+        options:
+          name:
+            type: str
+            required: true
+            description:
+              - Lowercase user name within the selected mount.
+          mount:
+            type: str
+            required: true
+            description:
+              - Single mount component using lowercase letters, digits, underscores and
+                hyphens.
+          token_policies:
+            type: list
+            elements: str
+            description:
+              - Policies granted at login, required when the effective state is present.
+          password:
+            type: str
+            no_log: true
+            description:
+              - Required only for a new user; never sent when updating an existing user.
+          token_bound_cidrs:
+            type: list
+            elements: str
+            default: []
+            description:
+              - Allowed token source networks; defaults to an empty list without source
+                restrictions.
+              - Use API-formatted networks or bare host addresses; /32 and /128 host suffixes
+                are rejected.
+          state:
+            type: str
+            choices:
+              - present
+              - absent
+            default: present
+            description:
+              - Desired user state; defaults to present.
+      openbao_config_kv_secrets:
+        type: list
+        elements: dict
+        default: []
         description:
-          - Required by recovery; number of shares required for the recovery quorum.
-      openbao_config_recovery_output:
-        type: path
-        description:
-          - Required by recovery; absolute export filename in an existing private controller
-            directory with mode 0700.
-          - Stores only PGP-encrypted shares; use a path outside source repositories and
-            back it up independently.
+          - KV v2 secrets with reconciled data and generated values; writes use check and
+            set.
+        options:
+          mount:
+            type: str
+            required: true
+            description:
+              - Single mount component using lowercase letters, digits, underscores and
+                hyphens.
+          path:
+            type: str
+            required: true
+            description:
+              - Relative secret path with slash-separated components; no leading slash or
+                traversal components.
+          generate:
+            type: dict
+            default: {}
+            description:
+              - Mapping of key names to optional length and chars settings; only missing
+                keys are generated.
+              - Per-key length defaults to 32; chars defaults to [ascii_letters, digits].
+          data:
+            type: dict
+            default: {}
+            no_log: true
+            description:
+              - Values reconciled on every run; additional keys are preserved and generate
+                keys must not overlap.
+          state:
+            type: str
+            choices:
+              - present
+              - absent
+            default: present
+            description:
+              - Desired secret state; defaults to present. Absent deletes metadata and all
+                versions.
       openbao_config_secret_id_mount:
         type: str
         default: ansible
@@ -271,8 +334,16 @@ argument_specs:
       openbao_config_secret_id_role_id:
         type: str
         description:
-          - Required by secret_id when state is present; Role ID used to verify the registered
-            credential.
+          - Required by secret_id when state is present and openbao_config_secret_id_verify
+            is true.
+      openbao_config_secret_id_verify:
+        type: bool
+        default: true
+        description:
+          - Log in from the controller with a present Secret ID and revoke the verification
+            token.
+          - Disable explicitly when the controller is outside the application AppRole's
+            allowed source networks.
       openbao_config_secret_id_state:
         type: str
         default: present
@@ -280,5 +351,5 @@ argument_specs:
           - present
           - absent
         description:
-          - Explicit secret_id operation; present registers and verifies, absent revokes
-            the selected credential.
+          - Explicit secret_id operation; present registers and optionally verifies, absent
+            revokes the selected credential.

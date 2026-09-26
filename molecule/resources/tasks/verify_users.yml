@@ -1,0 +1,165 @@
+---
+# role: openbao_config
+# file: molecule/resources/tasks/verify_users.yml
+
+- name: OPENBAO_CONFIG | Verify the original userpass password still works after drift repair
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/users/login/operator"
+    method: POST
+    body:
+      password: molecule-userpass-initial-password
+  register: __openbao_config_test_user_login
+  no_log: true
+
+- name: OPENBAO_CONFIG | Assert userpass policies were repaired
+  ansible.builtin.assert:
+    that:
+      - "'application' in __openbao_config_test_user_login.json.auth.policies"
+      - "'reader' not in __openbao_config_test_user_login.json.auth.policies"
+    quiet: true
+  no_log: true
+
+- name: OPENBAO_CONFIG | Revoke the userpass test token
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/token/revoke-self"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ __openbao_config_test_user_login.json.auth.client_token }}"
+    status_code: 204
+  no_log: true
+
+- name: OPENBAO_CONFIG | Assert check mode did not create a user
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/users/users/check-only"
+    status_code: 404
+  no_log: true
+
+- name: OPENBAO_CONFIG | Create a disposable userpass user
+  ansible.builtin.include_role:
+    name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+  vars:
+    openbao_config_users:
+      - {name: disposable, mount: users, token_policies: [reader], password: disposable-initial-password}
+
+- name: OPENBAO_CONFIG | Remove the disposable user twice
+  ansible.builtin.include_role:
+    name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+  vars:
+    openbao_config_users:
+      - {name: disposable, mount: users, state: absent}
+  loop: [first, repeated]
+  loop_control:
+    loop_var: __openbao_config_test_removal
+
+- name: OPENBAO_CONFIG | Assert the userpass user is absent
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/users/users/disposable"
+    status_code: 404
+  no_log: true
+
+- name: OPENBAO_CONFIG | Reject an IPv4 host prefix in a user token CIDR override
+  block:
+    - name: OPENBAO_CONFIG | Attempt to configure a host with a full IPv4 prefix
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        openbao_config_users:
+          - name: operator
+            mount: users
+            token_policies: [application]
+            token_bound_cidrs: [127.0.0.1/32]
+
+    - name: OPENBAO_CONFIG | Fail if the IPv4 host prefix was accepted
+      ansible.builtin.fail:
+        msg: An IPv4 /32 host suffix was accepted.
+  rescue:
+    - name: OPENBAO_CONFIG | Assert the CIDR guard rejected the IPv4 prefix
+      ansible.builtin.assert:
+        that:
+          - "'Validate CIDR host representation' in ansible_failed_task.name"
+        quiet: true
+
+- name: OPENBAO_CONFIG | Reject an IPv6 host prefix in an AppRole override
+  block:
+    - name: OPENBAO_CONFIG | Attempt to configure a host with a full IPv6 prefix
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        openbao_config_approles:
+          - name: restricted
+            token_policies: [reader]
+            secret_id_bound_cidrs: ['::1/128']
+
+    - name: OPENBAO_CONFIG | Fail if the IPv6 host prefix was accepted
+      ansible.builtin.fail:
+        msg: An IPv6 /128 host suffix was accepted.
+  rescue:
+    - name: OPENBAO_CONFIG | Assert the CIDR guard rejected the IPv6 prefix
+      ansible.builtin.assert:
+        that:
+          - "'Validate CIDR host representation' in ansible_failed_task.name"
+        quiet: true
+
+- name: OPENBAO_CONFIG | Register a network-restricted credential without a controller login twice
+  ansible.builtin.include_role:
+    name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    tasks_from: secret_id
+  vars:
+    openbao_config_secret_id_mount: approle
+    openbao_config_secret_id_role: restricted
+    openbao_config_secret_id_value: molecule-restricted-secret-id-not-for-production
+    openbao_config_secret_id_verify: false
+  loop: [first, repeated]
+  loop_control:
+    loop_var: __openbao_config_test_registration
+
+- name: OPENBAO_CONFIG | Confirm the restricted credential was registered
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/approle/role/restricted/secret-id/lookup"
+    method: POST
+    body:
+      secret_id: molecule-restricted-secret-id-not-for-production
+  no_log: true
+
+- name: OPENBAO_CONFIG | Verify enabled verification still requires a Role ID
+  block:
+    - name: OPENBAO_CONFIG | Request verification without a Role ID
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        tasks_from: secret_id
+      vars:
+        openbao_config_secret_id_mount: approle
+        openbao_config_secret_id_role: restricted
+        openbao_config_secret_id_value: molecule-restricted-secret-id-not-for-production
+
+    - name: OPENBAO_CONFIG | Fail if verification accepted a missing Role ID
+      ansible.builtin.fail:
+        msg: Verification accepted a missing Role ID.
+  rescue:
+    - name: OPENBAO_CONFIG | Assert the credential input check rejected the request
+      ansible.builtin.assert:
+        that:
+          - "'Validate explicit Secret ID operation inputs' in ansible_failed_task.name"
+        quiet: true
+
+- name: OPENBAO_CONFIG | Verify enabled verification respects application CIDRs
+  block:
+    - name: OPENBAO_CONFIG | Attempt the default verification outside the allowed networks
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        tasks_from: secret_id
+      vars:
+        openbao_config_secret_id_mount: approle
+        openbao_config_secret_id_role: restricted
+        openbao_config_secret_id_role_id: molecule-restricted
+        openbao_config_secret_id_value: molecule-restricted-secret-id-not-for-production
+
+    - name: OPENBAO_CONFIG | Fail if the restricted login succeeded
+      ansible.builtin.fail:
+        msg: Restricted login unexpectedly succeeded.
+  rescue:
+    - name: OPENBAO_CONFIG | Assert the verification login failed
+      ansible.builtin.assert:
+        that:
+          - "'Log in with the registered Secret ID' in ansible_failed_task.name"
+        quiet: true

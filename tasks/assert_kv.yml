@@ -1,0 +1,44 @@
+---
+# role: openbao_config
+# file: tasks/assert_kv.yml
+
+- name: OPENBAO_CONFIG | Validate the managed KV path
+  ansible.builtin.assert:
+    that:
+      - __openbao_config_kv_secret.mount is match('^[a-z][a-z0-9_-]*$')
+      - __openbao_config_kv_secret.path is match('^[A-Za-z0-9_-][A-Za-z0-9_.-]*(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*$')
+    quiet: true
+
+- name: OPENBAO_CONFIG | Require separate generated and reconciled KV keys
+  ansible.builtin.assert:
+    that:
+      - >-
+        __openbao_config_kv_secret.generate | default({}) | list
+        | intersect(__openbao_config_kv_secret.data | default({}) | list) | length == 0
+    fail_msg: "KV secret {{ __openbao_config_kv_secret.mount }}/{{ __openbao_config_kv_secret.path }} declares a key in both generate and data."
+    quiet: true
+
+- name: OPENBAO_CONFIG | Validate per-key password generator options
+  ansible.builtin.validate_argument_spec:
+    argument_spec:
+      length:
+        type: int
+      chars:
+        type: list
+        elements: str
+    provided_arguments: "{{ __openbao_config_generate.value }}"
+  loop: "{{ __openbao_config_kv_secret.generate | default({}) | dict2items }}"
+  loop_control:
+    loop_var: __openbao_config_generate
+    label: "{{ __openbao_config_generate.key }}"
+
+- name: OPENBAO_CONFIG | Require nonempty generated values and character sets
+  ansible.builtin.assert:
+    that:
+      - (__openbao_config_generate.value.length | default(32)) | int > 0
+      - __openbao_config_generate.value.chars | default(['ascii_letters', 'digits']) | length > 0
+    quiet: true
+  loop: "{{ __openbao_config_kv_secret.generate | default({}) | dict2items }}"
+  loop_control:
+    loop_var: __openbao_config_generate
+    label: "{{ __openbao_config_generate.key }}"

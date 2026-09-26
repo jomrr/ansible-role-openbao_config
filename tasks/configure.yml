@@ -9,7 +9,7 @@
     loop_var: __openbao_config_policy
     label: "{{ __openbao_config_policy.name }}"
 
-- name: OPENBAO_CONFIG | Reconcile AppRole authentication mounts
+- name: OPENBAO_CONFIG | Reconcile authentication mounts
   ansible.builtin.include_tasks: mount.yml
   vars:
     __openbao_config_mount_api: auth
@@ -17,6 +17,15 @@
   loop_control:
     loop_var: __openbao_config_mount
     label: "{{ __openbao_config_mount.path }}"
+
+- name: OPENBAO_CONFIG | Reconcile userpass users
+  ansible.builtin.include_tasks: user.yml
+  vars:
+    __openbao_config_user: "{{ openbao_config_users[__openbao_config_user_index] }}"
+  loop: "{{ range(openbao_config_users | length) | list }}"
+  loop_control:
+    loop_var: __openbao_config_user_index
+    label: "{{ __openbao_config_user.mount }}/{{ __openbao_config_user.name }}"
 
 - name: OPENBAO_CONFIG | Reconcile application AppRoles
   ansible.builtin.include_tasks: approle.yml
@@ -33,3 +42,12 @@
   loop_control:
     loop_var: __openbao_config_mount
     label: "{{ __openbao_config_mount.path }}"
+
+- name: OPENBAO_CONFIG | Reconcile KV version 2 secrets
+  ansible.builtin.include_tasks: kv_secret.yml
+  vars:
+    __openbao_config_kv_secret: "{{ openbao_config_kv_secrets[__openbao_config_kv_index] }}"
+  loop: "{{ range(openbao_config_kv_secrets | length) | list }}"
+  loop_control:
+    loop_var: __openbao_config_kv_index
+    label: "{{ __openbao_config_kv_secret.mount }}/{{ __openbao_config_kv_secret.path }}"

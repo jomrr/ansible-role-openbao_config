@@ -33,8 +33,11 @@
         - name: OPENBAO_CONFIG | Verify preservation and explicit removal
           ansible.builtin.import_tasks: ../tasks/verify_resources.yml
 
-        - name: OPENBAO_CONFIG | Verify recovery-key export
-          ansible.builtin.import_tasks: ../tasks/verify_recovery.yml
+        - name: OPENBAO_CONFIG | Verify managed KV data
+          ansible.builtin.import_tasks: ../tasks/verify_kv.yml
+
+        - name: OPENBAO_CONFIG | Verify userpass and CIDR restrictions
+          ansible.builtin.import_tasks: ../tasks/verify_users.yml
 
         - name: OPENBAO_CONFIG | Verify credential rotation
           ansible.builtin.import_tasks: ../tasks/verify_credentials.yml

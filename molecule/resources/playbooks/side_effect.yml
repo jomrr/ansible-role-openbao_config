@@ -6,6 +6,58 @@
   hosts: all
   gather_facts: false
   tasks:
+    - name: OPENBAO_CONFIG | Register the reader credential
+      ansible.builtin.include_role:
+        name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        tasks_from: secret_id
+      vars:
+        openbao_config_secret_id_mount: approle
+        openbao_config_secret_id_role: reader
+        openbao_config_secret_id_value: molecule-reader-secret-id-not-for-production
+        openbao_config_secret_id_verify: false
+
+    - name: OPENBAO_CONFIG | Log in once with the reader AppRole
+      ansible.builtin.set_fact:
+        __openbao_config_test_reader_login: >-
+          {{ lookup('community.hashi_vault.vault_login', url=openbao_config_url, ca_cert=openbao_config_ca_file,
+          validate_certs=true, auth_method='approle', mount_point='approle', role_id='molecule-reader',
+          secret_id='molecule-reader-secret-id-not-for-production') }}
+      no_log: true
+
+    - name: OPENBAO_CONFIG | Read the original secret using the reader token
+      delegate_to: localhost
+      no_log: true
+      block:
+        - name: OPENBAO_CONFIG | Preserve the original generated value for verification
+          ansible.builtin.copy:
+            dest: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/before-drift-{{ inventory_hostname }}.json"
+            content: >-
+              {{ lookup('community.hashi_vault.vault_kv2_get', 'app/managed', engine_mount_point='kv',
+              url=openbao_config_url, ca_cert=openbao_config_ca_file, validate_certs=true, auth_method='token',
+              token=__openbao_config_test_reader_login.auth.client_token).secret | to_json }}
+            mode: "0600"
+          diff: false
+
+        - name: OPENBAO_CONFIG | Assert unchanged convergence preserved the KV version
+          ansible.builtin.assert:
+            that:
+              - >-
+                lookup('community.hashi_vault.vault_kv2_get', 'app/managed', engine_mount_point='kv',
+                url=openbao_config_url, ca_cert=openbao_config_ca_file, validate_certs=true, auth_method='token',
+                token=__openbao_config_test_reader_login.auth.client_token).metadata.version == 1
+            quiet: true
+      always:
+        - name: OPENBAO_CONFIG | Revoke the reader session
+          ansible.builtin.uri:
+            url: "{{ openbao_config_url }}/v1/auth/token/revoke-self"
+            ca_path: "{{ openbao_config_ca_file }}"
+            method: POST
+            headers:
+              X-Vault-Token: "{{ __openbao_config_test_reader_login.auth.client_token }}"
+            status_code: 204
+            use_netrc: false
+            follow_redirects: none
+
     - name: OPENBAO_CONFIG | Change managed resources and add an unrelated mount
       ansible.builtin.include_role:
         name: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}"
@@ -23,6 +75,21 @@
             role_id: changed-application-role-id
             token_policies: [application]
             token_ttl: 300
+        openbao_config_users:
+          - name: operator
+            mount: users
+            token_policies: [reader]
+            password: ignored-drift-password
+            token_bound_cidrs: []
+        openbao_config_kv_secrets:
+          - mount: kv
+            path: app/managed
+            generate:
+              password: {length: 8, chars: [digits]}
+            data:
+              username: drift
+              nested: {undesired: true}
+              additional: preserved
         openbao_config_secrets_engines:
           - path: kv
             type: kv

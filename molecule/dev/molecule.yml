@@ -5,7 +5,7 @@
 dependency:
   name: "galaxy"
   options:
-    requirements-file: "${MOLECULE_PROJECT_DIRECTORY}/collections.yml"
+    requirements-file: "${MOLECULE_PROJECT_DIRECTORY}/molecule/resources/requirements.yml"
     role-file: "${MOLECULE_PROJECT_DIRECTORY}/molecule/resources/requirements.yml"
 driver:
   name: "podman"
@@ -37,8 +37,8 @@ provisioner:
         openbao_seal_credential_key: "host"
         openbao_tls_cert_file: "/etc/pki/molecule/openbao.crt"
         openbao_tls_key_file: "/etc/pki/molecule/openbao.key"
-        openbao_api_addr: "https://127.0.0.1:8200"
-        openbao_api_ca_file: "/etc/pki/molecule/openbao.crt"
+        openbao_api_addr: "{{ openbao_config_url }}"
+        openbao_controller_ca_file: "{{ openbao_config_ca_file }}"
         openbao_bootstrap_enabled: true
         openbao_bootstrap_role_id: "molecule-controller"
         openbao_bootstrap_secret_id: "molecule-management-secret-id-not-for-production"
@@ -51,14 +51,55 @@ provisioner:
           \ }}/openbao.crt"
         openbao_config_role_id: "molecule-controller"
         openbao_config_secret_id: "molecule-management-secret-id-not-for-production"
+        openbao_config_kv_secrets:
+          - mount: "kv"
+            path: "app/managed"
+            generate:
+              password:
+                length: 40
+                chars:
+                  - "ascii_letters"
+                  - "digits"
+            data:
+              username: "application"
+              nested:
+                desired: true
+        openbao_config_users:
+          - name: "operator"
+            mount: "users"
+            token_policies:
+              - "application"
+            password: "molecule-userpass-initial-password"
+            token_bound_cidrs:
+              - "::1"
+              - "127.0.0.1"
+              - "0.0.0.0/0"
         openbao_config_policies:
+          - name: "reader"
+            rules: "path \"kv/data/app/*\" { capabilities = [\"read\"] }"
           - name: "application"
             rules: "path \"kv/data/app/*\" { capabilities = [\"create\", \"read\", \"update\"] }"
         openbao_config_auth_methods:
+          - path: "users"
+            type: "userpass"
           - path: "approle"
             type: "approle"
             description: "Application identities"
         openbao_config_approles:
+          - name: "reader"
+            role_id: "molecule-reader"
+            token_policies:
+              - "reader"
+          - name: "restricted"
+            role_id: "molecule-restricted"
+            token_policies:
+              - "reader"
+            secret_id_bound_cidrs:
+              - "198.51.100.0/24"
+              - "192.0.2.0/24"
+            token_bound_cidrs:
+              - "192.0.2.0/24"
+              - "198.51.100.0/24"
           - name: "application"
             role_id: "molecule-application"
             token_policies:

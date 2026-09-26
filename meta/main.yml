@@ -4,7 +4,7 @@
 
 galaxy_info:
   author: Jonas Mauer
-  description: Ansible role for managing OpenBao AppRoles, ACL policies, KV v2 mounts and explicit credential operations.
+  description: Ansible role for managing OpenBao policies, identities, KV v2 secrets and explicit credential operations.
   galaxy_tags:
     - ansible
     - openbao

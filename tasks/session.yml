@@ -34,7 +34,7 @@
       check_mode: false
 
     # Check mode may acquire a short-lived session, but never changes configuration or keys.
-    - name: OPENBAO_CONFIG | Log in using the management AppRole
+    - name: OPENBAO_CONFIG | Log in using the caller-supplied AppRole
       ansible.builtin.uri:
         url: "{{ openbao_config_url }}/v1/auth/{{ openbao_config_auth_mount }}/login"
         method: POST

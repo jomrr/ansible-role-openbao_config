@@ -22,7 +22,7 @@
 
 - name: OPENBAO_CONFIG | Enable a missing mount
   when:
-    - (__openbao_config_mount.state | default(openbao_config_state)) == 'present'
+    - (__openbao_config_mount.state | default('present')) == 'present'
     - (__openbao_config_mount.path ~ '/') not in __openbao_config_mounts_read.json.data
   block:
     - name: OPENBAO_CONFIG | Report the planned mount creation
@@ -39,8 +39,8 @@
           type: "{{ __openbao_config_mount.type }}"
           description: "{{ __openbao_config_mount.description | default('') }}"
           config:
-            default_lease_ttl: "{{ __openbao_config_mount.default_lease_ttl | default(openbao_config_mount_default_lease_ttl) }}"
-            max_lease_ttl: "{{ __openbao_config_mount.max_lease_ttl | default(openbao_config_mount_max_lease_ttl) }}"
+            default_lease_ttl: "{{ __openbao_config_mount.default_lease_ttl | default(0) }}"
+            max_lease_ttl: "{{ __openbao_config_mount.max_lease_ttl | default(0) }}"
           options: "{{ {'version': '2'} if __openbao_config_mount_api == 'mounts' else omit }}"
         status_code: [200, 204]
       no_log: true
@@ -48,15 +48,15 @@
 
 - name: OPENBAO_CONFIG | Tune an existing mount
   when:
-    - (__openbao_config_mount.state | default(openbao_config_state)) == 'present'
+    - (__openbao_config_mount.state | default('present')) == 'present'
     - (__openbao_config_mount.path ~ '/') in __openbao_config_mounts_read.json.data
     - >-
       __openbao_config_mounts_read.json.data[__openbao_config_mount.path ~ '/'].description
       != (__openbao_config_mount.description | default(''))
       or __openbao_config_mounts_read.json.data[__openbao_config_mount.path ~ '/'].config.default_lease_ttl
-      != (__openbao_config_mount.default_lease_ttl | default(openbao_config_mount_default_lease_ttl))
+      != (__openbao_config_mount.default_lease_ttl | default(0))
       or __openbao_config_mounts_read.json.data[__openbao_config_mount.path ~ '/'].config.max_lease_ttl
-      != (__openbao_config_mount.max_lease_ttl | default(openbao_config_mount_max_lease_ttl))
+      != (__openbao_config_mount.max_lease_ttl | default(0))
   block:
     - name: OPENBAO_CONFIG | Report the planned mount tuning
       ansible.builtin.debug:
@@ -70,15 +70,15 @@
         method: POST
         body:
           description: "{{ __openbao_config_mount.description | default('') }}"
-          default_lease_ttl: "{{ __openbao_config_mount.default_lease_ttl | default(openbao_config_mount_default_lease_ttl) }}"
-          max_lease_ttl: "{{ __openbao_config_mount.max_lease_ttl | default(openbao_config_mount_max_lease_ttl) }}"
+          default_lease_ttl: "{{ __openbao_config_mount.default_lease_ttl | default(0) }}"
+          max_lease_ttl: "{{ __openbao_config_mount.max_lease_ttl | default(0) }}"
         status_code: 204
       no_log: true
       changed_when: true
 
 - name: OPENBAO_CONFIG | Disable an explicitly absent mount
   when:
-    - (__openbao_config_mount.state | default(openbao_config_state)) == 'absent'
+    - (__openbao_config_mount.state | default('present')) == 'absent'
     - (__openbao_config_mount.path ~ '/') in __openbao_config_mounts_read.json.data
   block:
     - name: OPENBAO_CONFIG | Report the planned mount removal

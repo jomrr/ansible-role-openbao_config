@@ -12,7 +12,7 @@
 
 - name: OPENBAO_CONFIG | Apply the ACL policy
   when:
-    - (__openbao_config_policy.state | default(openbao_config_state)) == 'present'
+    - (__openbao_config_policy.state | default('present')) == 'present'
     - >-
       __openbao_config_policy_read.status == 404
       or __openbao_config_policy_read.json.data.policy | trim != __openbao_config_policy.rules | trim
@@ -35,7 +35,7 @@
 
 - name: OPENBAO_CONFIG | Remove an explicitly absent ACL policy
   when:
-    - (__openbao_config_policy.state | default(openbao_config_state)) == 'absent'
+    - (__openbao_config_policy.state | default('present')) == 'absent'
     - __openbao_config_policy_read.status == 200
   block:
     - name: OPENBAO_CONFIG | Report the planned ACL policy removal

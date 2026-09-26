@@ -1,0 +1,69 @@
+---
+# role: openbao_config
+# file: tasks/user.yml
+
+- name: OPENBAO_CONFIG | Read the userpass user
+  ansible.builtin.uri:
+    url: "{{ openbao_config_url }}/v1/auth/{{ __openbao_config_user.mount }}/users/{{ __openbao_config_user.name }}"
+    status_code: [200, 404]
+  register: __openbao_config_user_read
+  no_log: true
+  check_mode: false
+
+- name: OPENBAO_CONFIG | Reconcile a present userpass user
+  vars:
+    __openbao_config_user_desired:
+      token_policies: "{{ __openbao_config_user.token_policies | sort }}"
+      token_bound_cidrs: "{{ __openbao_config_user.token_bound_cidrs | default([]) | sort }}"
+    __openbao_config_user_current:
+      token_policies: "{{ __openbao_config_user_read.json.data.token_policies | default([], true) | sort }}"
+      token_bound_cidrs: "{{ __openbao_config_user_read.json.data.token_bound_cidrs | default([], true) | sort }}"
+    __openbao_config_user_body: >-
+      {{ __openbao_config_user_desired | combine(
+      {'password': __openbao_config_user.password} if __openbao_config_user_read.status == 404 else {}) }}
+  when: (__openbao_config_user.state | default('present')) == 'present'
+  block:
+    - name: OPENBAO_CONFIG | Require a password for a new user
+      ansible.builtin.assert:
+        that:
+          - __openbao_config_user.password is defined
+        fail_msg: "New user {{ __openbao_config_user.mount }}/{{ __openbao_config_user.name }} requires a password."
+        quiet: true
+      when: __openbao_config_user_read.status == 404
+
+    - name: OPENBAO_CONFIG | Apply changed userpass settings
+      when: __openbao_config_user_read.status == 404 or __openbao_config_user_current != __openbao_config_user_desired
+      block:
+        - name: OPENBAO_CONFIG | Report the planned userpass update
+          ansible.builtin.debug:
+            msg: "Would write user {{ __openbao_config_user.mount }}/{{ __openbao_config_user.name }}."
+          changed_when: true
+          when: ansible_check_mode
+
+        - name: OPENBAO_CONFIG | Write userpass settings without resetting an existing password
+          ansible.builtin.uri:
+            url: "{{ openbao_config_url }}/v1/auth/{{ __openbao_config_user.mount }}/users/{{ __openbao_config_user.name }}"
+            method: POST
+            body: "{{ __openbao_config_user_body }}"
+            status_code: 204
+          no_log: true
+          changed_when: true
+
+- name: OPENBAO_CONFIG | Remove an absent userpass user
+  when:
+    - (__openbao_config_user.state | default('present')) == 'absent'
+    - __openbao_config_user_read.status == 200
+  block:
+    - name: OPENBAO_CONFIG | Report the planned userpass deletion
+      ansible.builtin.debug:
+        msg: "Would delete user {{ __openbao_config_user.mount }}/{{ __openbao_config_user.name }}."
+      changed_when: true
+      when: ansible_check_mode
+
+    - name: OPENBAO_CONFIG | Delete the userpass user
+      ansible.builtin.uri:
+        url: "{{ openbao_config_url }}/v1/auth/{{ __openbao_config_user.mount }}/users/{{ __openbao_config_user.name }}"
+        method: DELETE
+        status_code: 204
+      no_log: true
+      changed_when: true
